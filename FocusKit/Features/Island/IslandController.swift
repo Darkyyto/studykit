@@ -143,8 +143,11 @@ final class IslandController {
     }
 
     var isVisible: Bool {
-        if !hasHardwareNotch, shape == .compact, !hasActivity { return false }
-        return shape != .hidden || hasHardwareNotch
+        switch shape {
+        case .hidden: false
+        case .compact: hasActivity
+        case .peek, .hud, .expanded: true
+        }
     }
 
     private var presence: Presence {
