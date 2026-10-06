@@ -48,7 +48,7 @@ final class IslandController {
     @ObservationIgnored let recorder: VoiceRecorder
     @ObservationIgnored let nowPlaying: NowPlaying
     @ObservationIgnored private var panel: NotchPanel?
-    @ObservationIgnored private var mouseMonitor: Any?
+    @ObservationIgnored private var pointerWatcher: Timer?
     @ObservationIgnored private var exitWatcher: Timer?
     @ObservationIgnored private var outsideSince: Date?
     @ObservationIgnored private var hoverIntent: Task<Void, Never>?
@@ -57,8 +57,8 @@ final class IslandController {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     static let canvas = CGSize(width: 760, height: 340)
-    static let expandedSize = CGSize(width: 640, height: 252)
-    static let wing: CGFloat = 70
+    static let expandedSize = CGSize(width: 500, height: 168)
+    static let wing: CGFloat = 54
     static let fillet: CGFloat = 8
 
     let calendar = CalendarStore()
@@ -117,7 +117,7 @@ final class IslandController {
         switch shape {
         case .hidden: return base
         case .compact: return CGSize(width: base.width + Self.wing * 2, height: base.height)
-        case .peek: return CGSize(width: base.width + 200, height: base.height + 40)
+        case .peek: return CGSize(width: base.width + 140, height: base.height + 34)
         case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height)
         }
     }
@@ -125,8 +125,8 @@ final class IslandController {
     var bottomRadius: CGFloat {
         switch shape {
         case .hidden, .compact: min(12, notch.height / 2)
-        case .peek: 20
-        case .expanded: 30
+        case .peek: 18
+        case .expanded: 24
         }
     }
 
@@ -184,9 +184,10 @@ final class IslandController {
         reposition()
         panel.ignoresMouseEvents = true
         panel.orderFrontRegardless()
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+        pointerWatcher = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pointerMoved() }
         }
+        pointerWatcher?.tolerance = 0.04
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()
@@ -220,8 +221,8 @@ final class IslandController {
             hoverIntent = nil
             return
         }
-        let width = max(size.width, max(notch.width, 180))
-        let band = CGRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - notch.height - 4, width: width, height: notch.height + 4)
+        let width = max(size.width, max(notch.width, 180)) + 40
+        let band = CGRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - notch.height - 6, width: width, height: notch.height + 6)
         guard band.contains(NSEvent.mouseLocation) else {
             hoverIntent?.cancel()
             hoverIntent = nil

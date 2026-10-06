@@ -122,9 +122,15 @@ struct UpdateCard: View {
     private func ready(_ url: URL) -> some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
-                step(1, "FocusKit quits and the installer opens.")
-                step(2, "Drag FocusKit onto Applications and choose Replace.")
-                step(3, "Open FocusKit again. Everything is where you left it.")
+                if url.pathExtension == "app" {
+                    step(1, "FocusKit saves your session and closes.")
+                    step(2, "The new version replaces the old one.")
+                    step(3, "FocusKit opens again by itself, right where you left it.")
+                } else {
+                    step(1, "FocusKit quits and the installer opens.")
+                    step(2, "Drag FocusKit onto Applications and choose Replace.")
+                    step(3, "Open FocusKit again. Everything is where you left it.")
+                }
             }
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -135,7 +141,7 @@ struct UpdateCard: View {
             Button {
                 updater.openInstaller(url)
             } label: {
-                Text("Install and Quit")
+                Text(url.pathExtension == "app" ? "Restart and Update" : "Install and Quit")
                     .font(.rounded(16, weight: .semibold))
                     .frame(maxWidth: .infinity)
                     .frame(height: 30)

@@ -14,6 +14,7 @@ struct FocusKitApp: App {
     @AppStorage(Preference.showsMenuBarExtra) private var showsMenuBarExtra = true
 
     init() {
+        SandboxMigration.importDefaults()
         let library = Library()
         let engine = FocusEngine(library: library)
         let recorder = VoiceRecorder(library: library)
@@ -44,8 +45,10 @@ struct FocusKitApp: App {
                     updater.checkOnLaunch()
                     enhancer.resumePending(for: Persona(rawValue: UserDefaults.standard.string(forKey: Preference.persona) ?? "") ?? .personal)
                     delegate.beforeTerminate = { [engine, recorder] in
+                        if engine.isActive {
+                            engine.stop()
+                        }
                         guard recorder.isActive else { return }
-                        engine.stop()
                         if let recording = await recorder.stop() {
                             engine.attachRecording(recording.id)
                         }

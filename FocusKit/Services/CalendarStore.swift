@@ -45,7 +45,17 @@ final class CalendarStore {
         }
     }
 
+    func refresh() {
+        let current = Self.currentAccess
+        if current != access, current == .granted {
+            store.reset()
+        }
+        access = current
+        reload()
+    }
+
     func prepare() async {
+        refresh()
         if access == .unknown {
             let granted = (try? await store.requestFullAccessToEvents()) ?? false
             access = granted ? .granted : .denied

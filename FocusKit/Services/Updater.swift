@@ -103,11 +103,67 @@ final class Updater {
     }
 
     func openInstaller(_ url: URL) {
-        NSWorkspace.shared.open(url)
-        Task {
-            try? await Task.sleep(for: .seconds(1.2))
-            NSApp.terminate(nil)
+        guard url.pathExtension == "app" else {
+            NSWorkspace.shared.open(url)
+            Task {
+                try? await Task.sleep(for: .seconds(1.2))
+                NSApp.terminate(nil)
+            }
+            return
         }
+        var destination = Bundle.main.bundleURL
+        if destination.path(percentEncoded: false).contains("/AppTranslocation/") {
+            destination = URL(fileURLWithPath: "/Applications/FocusKit.app")
+        }
+        let script = """
+        while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+        rm -rf "$3.previous"
+        if mv "$3" "$3.previous" && ditto "$2" "$3"; then
+          rm -rf "$3.previous"
+        else
+          rm -rf "$3"
+          mv "$3.previous" "$3"
+        fi
+        xattr -dr com.apple.quarantine "$3" 2>/dev/null
+        open "$3"
+        rm -rf "$4"
+        """
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), url.path(percentEncoded: false), destination.path(percentEncoded: false), url.deletingLastPathComponent().path(percentEncoded: false)]
+        do {
+            try process.run()
+            NSApp.terminate(nil)
+        } catch {
+            state = .failed("FocusKit could not install the update by itself. Download it from the release page.")
+        }
+    }
+
+    nonisolated private static func stage(_ diskImage: URL, in work: URL) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            let mount = work.appending(path: "volume", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
+            try run("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-readonly", "-mountpoint", mount.path(percentEncoded: false), diskImage.path(percentEncoded: false)])
+            defer { try? run("/usr/bin/hdiutil", ["detach", "-quiet", "-force", mount.path(percentEncoded: false)]) }
+            let source = mount.appending(path: "FocusKit.app", directoryHint: .isDirectory)
+            guard Bundle(url: source)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            let staged = work.appending(path: "FocusKit.app", directoryHint: .isDirectory)
+            try? FileManager.default.removeItem(at: staged)
+            try run("/usr/bin/ditto", [source.path(percentEncoded: false), staged.path(percentEncoded: false)])
+            try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staged.path(percentEncoded: false)])
+            return staged
+        }.value
+    }
+
+    nonisolated private static func run(_ tool: String, _ arguments: [String]) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: tool)
+        process.arguments = arguments
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
     }
 
     func skip(_ release: Release) {
@@ -125,7 +181,10 @@ final class Updater {
             do {
                 let (bytes, response) = try await URLSession.shared.bytes(from: release.diskImage)
                 let expected = Double(max(response.expectedContentLength, 1))
-                let destination = URL.downloadsDirectory.appending(path: "FocusKit-\(release.version).dmg")
+                let work = FileManager.default.temporaryDirectory.appending(path: "FocusKitUpdate", directoryHint: .isDirectory)
+                try? FileManager.default.removeItem(at: work)
+                try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+                let destination = work.appending(path: "FocusKit-\(release.version).dmg")
                 try? FileManager.default.removeItem(at: destination)
                 FileManager.default.createFile(atPath: destination.path(percentEncoded: false), contents: nil)
                 let handle = try FileHandle(forWritingTo: destination)
@@ -143,7 +202,12 @@ final class Updater {
                 try handle.write(contentsOf: buffer)
                 try handle.close()
                 Backup.make(reason: "before-\(release.version)")
-                state = .ready(destination)
+                if SandboxMigration.isSandboxed {
+                    state = .ready(destination)
+                } else {
+                    state = .ready(try await Self.stage(destination, in: work))
+                }
+                presented = release
             } catch {
                 state = .failed("The download did not finish. You can get it from the release page instead.")
                 NSWorkspace.shared.open(release.page)

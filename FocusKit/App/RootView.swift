@@ -421,13 +421,13 @@ private struct UpdateBanner: View {
     private var subtitle: String {
         switch updater.state {
         case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
-        case .ready: "Downloaded. Ready to install."
+        case .ready: "Ready. FocusKit restarts in a moment."
         default: "Your sessions and lectures stay as they are."
         }
     }
 
     private var buttonTitle: String {
-        if case .ready = updater.state { return "Install" }
+        if case .ready = updater.state { return "Restart" }
         if case .downloading = updater.state { return "Show" }
         return "Update"
     }

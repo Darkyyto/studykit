@@ -188,7 +188,7 @@ extension Library {
         var documents: URL { root.appending(path: "Documents", directoryHint: .isDirectory) }
 
         static var standard: Location {
-            let root = URL.applicationSupportDirectory.appending(path: "FocusKit", directoryHint: .isDirectory)
+            let root = SandboxMigration.libraryRoot
             let location = Location(root: root)
             try? FileManager.default.createDirectory(at: location.recordings, withIntermediateDirectories: true)
             try? FileManager.default.createDirectory(at: location.documents, withIntermediateDirectories: true)

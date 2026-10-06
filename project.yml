@@ -10,7 +10,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.3.1"
+    MARKETING_VERSION: "0.3.2"
     CURRENT_PROJECT_VERSION: "2"
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -52,16 +52,9 @@ targets:
     entitlements:
       path: FocusKit/Resources/FocusKit.entitlements
       properties:
-        com.apple.security.app-sandbox: true
         com.apple.security.device.audio-input: true
-        com.apple.security.files.user-selected.read-write: true
-        com.apple.security.files.downloads.read-write: true
         com.apple.security.personal-information.calendars: true
-        com.apple.security.network.client: true
         com.apple.security.automation.apple-events: true
-        com.apple.security.temporary-exception.apple-events:
-          - com.spotify.client
-          - com.apple.Music
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.focuskit.FocusKit

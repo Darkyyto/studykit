@@ -205,6 +205,7 @@ private struct ProfilePane: View {
     @AppStorage(Preference.name) private var name = ""
     @AppStorage(Preference.hasOnboarded) private var hasOnboarded = true
     @AppStorage(Preference.isReplayingOnboarding) private var isReplayingOnboarding = false
+    @FocusState private var editsName: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -247,6 +248,10 @@ private struct ProfilePane: View {
                     TextField("Name", text: $name)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 200)
+                        .focused($editsName)
+                        .onAppear {
+                            DispatchQueue.main.async { editsName = false }
+                        }
                 }
                 SettingsRow(title: "Setup", detail: "Walk through the welcome screens again.", showsDivider: false) {
                     Button("Replay Onboarding") {
@@ -469,8 +474,16 @@ private struct UpdatesPane: View {
         VStack(alignment: .leading, spacing: 10) {
             SettingsCard {
                 SettingsRow(title: "FocusKit \(Updater.currentVersion)", detail: status) {
-                    if let release = updater.available {
-                        Button("Install \(release.version)…") { updater.presented = release }
+                    if case .downloading(let fraction) = updater.state {
+                        ProgressView(value: fraction)
+                            .progressViewStyle(.linear)
+                            .frame(width: 140)
+                    } else if case .ready(let url) = updater.state {
+                        Button(url.pathExtension == "app" ? "Restart and Update" : "Install and Quit") { updater.openInstaller(url) }
+                            .buttonStyle(.glassProminent)
+                            .buttonBorderShape(.capsule)
+                    } else if let release = updater.available {
+                        Button("Download \(release.version)") { updater.install(release) }
                             .buttonStyle(.glassProminent)
                             .buttonBorderShape(.capsule)
                     } else {
@@ -506,7 +519,7 @@ private struct UpdatesPane: View {
         case .upToDate: "You have the latest version."
         case .available(let release): "Version \(release.version) is available."
         case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
-        case .ready: "Downloaded and ready to install."
+        case .ready(let url): url.pathExtension == "app" ? "Ready. FocusKit restarts with the new version." : "Downloaded. FocusKit quits, then drag it onto Applications and choose Replace."
         case .failed(let message): message
         case .idle: "Free for personal use."
         }

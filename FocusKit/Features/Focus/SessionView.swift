@@ -150,7 +150,7 @@ struct SessionView: View {
                 FlightMapScene(
                     origin: route.origin,
                     destination: route.destination,
-                    progress: engine.focusProgress(at: engine.now),
+                    progressAt: { engine.focusProgress(at: $0) },
                     isPaused: engine.isPaused,
                     isArrived: engine.phase.isComplete,
                     tick: engine.now

@@ -18,14 +18,20 @@ enum FlightMapStyle: String, CaseIterable, Identifiable {
 struct FlightMapScene: View {
     let origin: Airport
     let destination: Airport
-    let progress: Double
+    let progressAt: (Date) -> Double
     let isPaused: Bool
     let isArrived: Bool
     let tick: Date
 
+    private var progress: Double {
+        progressAt(tick)
+    }
+
     @AppStorage("flightMapStyle") private var style = FlightMapStyle.map
     @Environment(\.chromeInset) private var chromeInset
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.isOnScreen) private var isOnScreen
     @State private var position: MapCameraPosition = .automatic
     @State private var follows = false
 
@@ -78,7 +84,20 @@ struct FlightMapScene: View {
             .padding(.horizontal, 20)
         }
         .onAppear(perform: introduce)
-        .onChange(of: tick) { follow(animated: true) }
+        .background {
+            TimelineView(.animation(minimumInterval: appearsActive ? 1.0 / 30 : 1.0 / 6, paused: !follows || isPaused || isArrived || !isOnScreen)) { context in
+                Color.clear
+                    .onChange(of: context.date) { _, date in
+                        guard follows, !isArrived else { return }
+                        position = .camera(camera(at: date))
+                    }
+            }
+        }
+        .onChange(of: isPaused) { follow(animated: false) }
+        .onChange(of: isOnScreen) { _, visible in
+            if visible { follow(animated: false) }
+        }
+        .onChange(of: appearsActive) { follow(animated: false) }
         .onChange(of: isArrived) { _, arrived in
             if arrived { overview(animated: true) }
         }
@@ -133,8 +152,18 @@ struct FlightMapScene: View {
     }
 
     private var followCamera: MapCamera {
+        camera(at: tick)
+    }
+
+    private func camera(at date: Date) -> MapCamera {
+        let fraction = min(1, max(0, progressAt(date)))
         let distance = min(900_000, max(30_000, routeKilometers * 1000 * 0.38))
-        return MapCamera(centerCoordinate: plane, distance: distance, heading: heading, pitch: 0)
+        return MapCamera(
+            centerCoordinate: origin.coordinate(towards: destination, fraction: fraction),
+            distance: distance,
+            heading: origin.heading(towards: destination, fraction: fraction),
+            pitch: 0
+        )
     }
 
     private func introduce() {
@@ -143,7 +172,7 @@ struct FlightMapScene: View {
         Task {
             try? await Task.sleep(for: .seconds(1.6))
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 2.8)) {
-                position = .camera(followCamera)
+                position = .camera(camera(at: .now.addingTimeInterval(2.8)))
             }
             try? await Task.sleep(for: .seconds(2.9))
             withAnimation(.easeOut(duration: 0.3)) { follows = true }
@@ -153,7 +182,7 @@ struct FlightMapScene: View {
     private func follow(animated: Bool) {
         guard follows, !isArrived else { return }
         withAnimation(animated && !reduceMotion ? .linear(duration: 1) : nil) {
-            position = .camera(followCamera)
+            position = .camera(camera(at: .now))
         }
     }
 

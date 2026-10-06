@@ -36,7 +36,7 @@ struct IslandView: View {
                         .frame(width: size.width, height: size.height, alignment: .top)
                         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius))
                 }
-                .shadow(color: .black.opacity(controller.shape == .expanded ? 0.4 : 0), radius: 24, y: 10)
+                .shadow(color: .black.opacity(controller.shape == .expanded ? 0.3 : 0), radius: 16, y: 6)
                 .opacity(controller.isVisible ? 1 : 0)
         }
         .frame(width: IslandController.canvas.width, height: IslandController.canvas.height)
@@ -60,6 +60,9 @@ struct IslandView: View {
         .onChange(of: soundscape.isEnabled) { _, _ in soundscape.sync(kind: soundscapeKind) }
         .task(id: controller.tab) {
             if controller.tab == .calendar { await calendar.prepare() }
+        }
+        .onChange(of: controller.shape) { _, shape in
+            if shape == .expanded { calendar.refresh() }
         }
     }
 
@@ -98,9 +101,9 @@ struct IslandView: View {
                 removal: .opacity
             ))
             .id(controller.tab)
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 12)
+            .padding(.top, 6)
+            .padding(.bottom, 12)
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .animation(.spring(response: 0.36, dampingFraction: 0.9), value: controller.tab)
@@ -113,12 +116,12 @@ struct IslandView: View {
                 tabButton(.calendar, symbol: "calendar", help: "Calendar")
             }
             .padding(.leading, 14)
-            Spacer(minLength: max(controller.notch.width, 120))
+            Spacer(minLength: max(controller.notch.width, 100))
             HStack(spacing: 10) {
-                Text(Date.now.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
-                    .font(.rounded(12, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.6))
-                iconButton("arrow.up.forward.app", help: "Open FocusKit", size: 26) { controller.openApp() }
+                Text(Date.now.formatted(.dateTime.weekday(.abbreviated).day()))
+                    .font(.rounded(11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.55))
+                iconButton("arrow.up.forward.app", help: "Open FocusKit", size: 22) { controller.openApp() }
             }
             .padding(.trailing, 14)
         }
@@ -132,7 +135,7 @@ struct IslandView: View {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(isSelected ? .white : .white.opacity(0.45))
-                .frame(width: 34, height: 24)
+                .frame(width: 30, height: 22)
                 .background {
                     if isSelected {
                         Capsule()
@@ -147,7 +150,7 @@ struct IslandView: View {
     }
 
     private var home: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 8) {
             Group {
                 if controller.isBusy {
                     sessionSection
@@ -155,10 +158,10 @@ struct IslandView: View {
                     launcherSection
                 }
             }
-            .frame(width: 300)
+            .frame(width: 236)
             .frame(maxHeight: .infinity)
-            .padding(14)
-            .background(.white.opacity(0.06), in: .rect(cornerRadius: 22))
+            .padding(10)
+            .background(.white.opacity(0.06), in: .rect(cornerRadius: 16))
 
             Group {
                 if nowPlaying.hasTrack {
@@ -168,8 +171,8 @@ struct IslandView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(14)
-            .background(.white.opacity(0.06), in: .rect(cornerRadius: 22))
+            .padding(10)
+            .background(.white.opacity(0.06), in: .rect(cornerRadius: 16))
         }
     }
 
@@ -276,18 +279,18 @@ struct IslandView: View {
 
     private var sessionSection: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 thumbnail
-                    .frame(width: 104, height: 104)
-                    .clipShape(.rect(cornerRadius: 18))
-                VStack(alignment: .leading, spacing: 8) {
+                    .frame(width: 70, height: 70)
+                    .clipShape(.rect(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 6) {
                     VStack(alignment: .leading, spacing: 0) {
                         Label(caption, systemImage: symbol)
                             .font(.rounded(11, weight: .semibold))
                             .foregroundStyle(tint)
                             .lineLimit(1)
                         Text(time(at: context.date))
-                            .font(.numeric(32, weight: .bold))
+                            .font(.numeric(24, weight: .bold))
                             .foregroundStyle(.white)
                             .contentTransition(.numericText(countsDown: !recorder.isActive))
                             .animation(Motion.quick, value: time(at: context.date))
@@ -302,28 +305,28 @@ struct IslandView: View {
 
     @ViewBuilder
     private var sessionControls: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             if engine.isActive {
-                iconButton("forward.end.fill", help: engine.isResting ? "Skip break" : "Skip round", size: 32) { engine.skip() }
-                iconButton(engine.isPaused ? "play.fill" : "pause.fill", help: engine.isPaused ? "Resume" : "Pause", size: 42, highlighted: true) {
+                iconButton("forward.end.fill", help: engine.isResting ? "Skip break" : "Skip round", size: 26) { engine.skip() }
+                iconButton(engine.isPaused ? "play.fill" : "pause.fill", help: engine.isPaused ? "Resume" : "Pause", size: 32, highlighted: true) {
                     withAnimation(Motion.morph) { engine.togglePause() }
                 }
-                iconButton(soundscape.isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill", help: soundscape.isEnabled ? "Mute soundscape" : "Play soundscape", size: 32) {
+                iconButton(soundscape.isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill", help: soundscape.isEnabled ? "Mute soundscape" : "Play soundscape", size: 26) {
                     soundscape.isEnabled.toggle()
                 }
             } else if recorder.isActive {
-                iconButton("stop.fill", help: "Stop and save the recording", size: 42, highlighted: true) {
+                iconButton("stop.fill", help: "Stop and save the recording", size: 32, highlighted: true) {
                     recorder.stopNow(engine: engine, enhancer: enhancer, persona: persona)
                 }
             } else {
-                iconButton("checkmark", help: "See summary", size: 42, highlighted: true) { controller.openApp() }
+                iconButton("checkmark", help: "See summary", size: 32, highlighted: true) { controller.openApp() }
             }
         }
     }
 
     private var musicSection: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 HStack(spacing: 10) {
                     Button {
                         nowPlaying.open()
@@ -343,8 +346,8 @@ struct IslandView: View {
                                 }
                             }
                         }
-                        .frame(width: 44, height: 44)
-                        .clipShape(.rect(cornerRadius: 10))
+                        .frame(width: 38, height: 38)
+                        .clipShape(.rect(cornerRadius: 9))
                         .shadow(color: nowPlaying.accent.opacity(0.35), radius: 8, y: 2)
                     }
                     .buttonStyle(.pressable)
@@ -368,12 +371,12 @@ struct IslandView: View {
                         .padding(.horizontal, 4)
                 }
 
-                HStack(spacing: 14) {
-                    iconButton("backward.fill", help: "Previous", size: 30) { nowPlaying.previous() }
-                    iconButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", help: nowPlaying.isPlaying ? "Pause" : "Play", size: 38, highlighted: true) {
+                HStack(spacing: 12) {
+                    iconButton("backward.fill", help: "Previous", size: 26) { nowPlaying.previous() }
+                    iconButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", help: nowPlaying.isPlaying ? "Pause" : "Play", size: 32, highlighted: true) {
                         nowPlaying.togglePlayback()
                     }
-                    iconButton("forward.fill", help: "Next", size: 30) { nowPlaying.next() }
+                    iconButton("forward.fill", help: "Next", size: 26) { nowPlaying.next() }
                 }
             }
         }
@@ -381,26 +384,26 @@ struct IslandView: View {
 
     private var launcherSection: some View {
         let today = library.focusedTime(in: Calendar.current.dateInterval(of: .day, for: .now))
-        return VStack(spacing: 12) {
-            VStack(spacing: 2) {
+        return VStack(spacing: 10) {
+            VStack(spacing: 1) {
                 Text(today.compactDuration)
-                    .font(.numeric(28, weight: .bold))
+                    .font(.numeric(22, weight: .bold))
                     .foregroundStyle(.white)
                 Text(name.isEmpty ? "focused today" : "focused today, \(name)")
                     .font(.rounded(11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.5))
                     .lineLimit(1)
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
                 ForEach(FocusMode.allCases) { item in
                     Button {
                         start(item)
                     } label: {
                         Label(item.title, systemImage: item.symbol)
-                            .font(.rounded(12, weight: .semibold))
+                            .font(.rounded(11.5, weight: .semibold))
                             .foregroundStyle(item.palette.mid)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 34)
+                            .frame(height: 28)
                             .background(item.palette.mid.opacity(item == mode ? 0.24 : 0.12), in: .capsule)
                             .contentShape(.capsule)
                     }
@@ -413,10 +416,10 @@ struct IslandView: View {
     }
 
     private var agendaSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Up next")
-                    .font(.rounded(13, weight: .bold))
+                    .font(.rounded(12, weight: .bold))
                     .foregroundStyle(.white)
                 Spacer()
                 Button("Calendar") { controller.tab = .calendar }
@@ -435,7 +438,7 @@ struct IslandView: View {
                     Spacer()
                 } else {
                     VStack(spacing: 6) {
-                        ForEach(calendar.upcoming.prefix(3)) { event in
+                        ForEach(calendar.upcoming.prefix(2)) { event in
                             EventRow(event: event, compact: true)
                         }
                     }
@@ -490,13 +493,13 @@ struct IslandView: View {
     }
 
     private var calendarTab: some View {
-        HStack(alignment: .top, spacing: 14) {
+        HStack(alignment: .top, spacing: 12) {
             MonthGrid(calendar: calendar)
-                .frame(width: 268)
+                .frame(width: 214)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(calendar.selected.formatted(.dateTime.weekday(.wide).day().month(.wide)))
-                        .font(.rounded(13, weight: .bold))
+                        .font(.rounded(12, weight: .bold))
                         .foregroundStyle(.white)
                     Spacer()
                     Button {
@@ -692,13 +695,13 @@ private struct MonthGrid: View {
 
     var body: some View {
         let system = Calendar.current
-        VStack(spacing: 6) {
+        VStack(spacing: 2) {
             HStack {
                 Text(calendar.month.formatted(.dateTime.month(.wide)))
-                    .font(.rounded(15, weight: .bold))
+                    .font(.rounded(13, weight: .bold))
                     .foregroundStyle(.white)
                 + Text(" " + calendar.month.formatted(.dateTime.year()))
-                    .font(.rounded(13, weight: .semibold))
+                    .font(.rounded(11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.45))
                 Spacer()
                 chevron("chevron.left") { calendar.showMonth(offset: -1) }
@@ -708,12 +711,12 @@ private struct MonthGrid: View {
             HStack(spacing: 0) {
                 ForEach(Array(calendar.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol)
-                        .font(.rounded(10, weight: .semibold))
+                        .font(.rounded(9, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.4))
                         .frame(maxWidth: .infinity)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
                 ForEach(calendar.days, id: \.self) { day in
                     let inMonth = system.isDate(day, equalTo: calendar.month, toGranularity: .month)
                     let isToday = system.isDateInToday(day)
@@ -723,9 +726,9 @@ private struct MonthGrid: View {
                     } label: {
                         VStack(spacing: 1) {
                             Text("\(system.component(.day, from: day))")
-                                .font(.rounded(12, weight: isToday ? .bold : .semibold))
+                                .font(.rounded(10.5, weight: isToday ? .bold : .semibold))
                                 .foregroundStyle(isToday ? .white : .white.opacity(inMonth ? 0.9 : 0.25))
-                                .frame(width: 24, height: 22)
+                                .frame(width: 19, height: 15)
                                 .background {
                                     if isToday {
                                         Circle().fill(Color.accentColor)
@@ -735,7 +738,7 @@ private struct MonthGrid: View {
                                 }
                             Circle()
                                 .fill(.white.opacity(calendar.hasEvents(on: day) && inMonth ? 0.55 : 0))
-                                .frame(width: 3.5, height: 3.5)
+                                .frame(width: 3, height: 3)
                         }
                         .frame(maxWidth: .infinity)
                         .contentShape(.rect)
@@ -750,9 +753,9 @@ private struct MonthGrid: View {
     private func chevron(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .foregroundStyle(.white.opacity(0.75))
-                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
                 .background(.white.opacity(0.08), in: .circle)
                 .contentShape(.circle)
         }
@@ -771,7 +774,7 @@ private struct EventRow: View {
                 .frame(width: 3.5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title)
-                    .font(.rounded(13, weight: .semibold))
+                    .font(.rounded(12, weight: .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                 if let location = event.location, !location.isEmpty {
@@ -796,9 +799,9 @@ private struct EventRow: View {
             .font(.numeric(12, weight: .semibold))
             .foregroundStyle(.white.opacity(0.85))
         }
-        .padding(.vertical, compact ? 7 : 9)
-        .padding(.horizontal, 10)
-        .frame(height: compact ? 44 : 52)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 9)
+        .frame(height: compact ? 36 : 40)
         .background(.white.opacity(event.end < .now ? 0.03 : 0.07), in: .rect(cornerRadius: 12))
         .opacity(event.end < .now ? 0.55 : 1)
     }
