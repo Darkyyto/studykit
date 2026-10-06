@@ -12,6 +12,7 @@ struct FocusKitApp: App {
     @State private var soundscape: Soundscape
     @State private var updater = Updater()
     @AppStorage(Preference.showsMenuBarExtra) private var showsMenuBarExtra = true
+    @AppStorage(Preference.mainWindowOpen) private var mainWindowOpen = true
 
     init() {
         SandboxMigration.importDefaults()
@@ -63,12 +64,13 @@ struct FocusKitApp: App {
         .defaultSize(width: 1120, height: 760)
         .commands { AppCommands(engine: engine) }
 
-        MenuBarExtra(isInserted: $showsMenuBarExtra) {
+        MenuBarExtra(isInserted: Binding(get: { showsMenuBarExtra || !mainWindowOpen }, set: { showsMenuBarExtra = $0 })) {
             MenuBarPanel()
                 .environment(library)
                 .environment(engine)
                 .environment(recorder)
                 .environment(enhancer)
+                .environment(updater)
         } label: {
             MenuBarLabel(engine: engine)
         }
@@ -96,6 +98,8 @@ enum Preference {
     static let homeAirport = "homeAirport"
     static let transcriptionLocale = "transcriptionLocale"
     static let showsMenuBarExtra = "showsMenuBarExtra"
+    static let keepsRunning = "keepsRunningInBackground"
+    static let mainWindowOpen = "mainWindowOpen"
 
     static func minutes(for mode: FocusMode) -> String {
         "minutes.\(mode.rawValue)"
@@ -104,6 +108,49 @@ enum Preference {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openDocuments = Notification.Name("FocusKitOpenDocuments")
+    static let openMainWindow = Notification.Name("FocusKitOpenMainWindow")
+
+    private static var keepsRunning: Bool {
+        UserDefaults.standard.object(forKey: Preference.keepsRunning) as? Bool ?? true
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.set(true, forKey: Preference.mainWindowOpen)
+        let center = NotificationCenter.default
+        center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
+            let isMain = (note.object as? NSWindow)?.identifier?.rawValue.hasPrefix("main") == true
+            MainActor.assumeIsolated { if isMain { AppDelegate.mainWindowClosed() } }
+        }
+        center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
+            let isMain = (note.object as? NSWindow)?.identifier?.rawValue.hasPrefix("main") == true
+            MainActor.assumeIsolated {
+                guard isMain else { return }
+                UserDefaults.standard.set(true, forKey: Preference.mainWindowOpen)
+                if NSApp.activationPolicy() != .regular {
+                    NSApp.setActivationPolicy(.regular)
+                }
+            }
+        }
+    }
+
+    private static func mainWindowClosed() {
+        UserDefaults.standard.set(false, forKey: Preference.mainWindowOpen)
+        guard keepsRunning else { return }
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !Self.keepsRunning
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            NotificationCenter.default.post(name: Self.openMainWindow, object: nil)
+        }
+        return true
+    }
 
     var beforeTerminate: (@MainActor () async -> Void)?
 

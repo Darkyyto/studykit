@@ -679,7 +679,7 @@ struct IslandView: View {
     private var calendarTab: some View {
         HStack(alignment: .top, spacing: 12) {
             MonthGrid(calendar: calendar)
-                .frame(width: 214)
+                .frame(width: 232)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(calendar.selected.formatted(.dateTime.weekday(.wide).day().month(.wide)))
@@ -900,38 +900,32 @@ private struct MonthGrid: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 0) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
                 ForEach(calendar.days, id: \.self) { day in
-                    let inMonth = system.isDate(day, equalTo: calendar.month, toGranularity: .month)
-                    let isToday = system.isDateInToday(day)
-                    let isSelected = system.isDate(day, inSameDayAs: calendar.selected)
-                    Button {
+                    DayCell(
+                        day: system.component(.day, from: day),
+                        colors: inMonthColors(for: day, system: system),
+                        inMonth: system.isDate(day, equalTo: calendar.month, toGranularity: .month),
+                        isToday: system.isDateInToday(day),
+                        isSelected: system.isDate(day, inSameDayAs: calendar.selected),
+                        isWeekend: system.isDateInWeekend(day)
+                    ) {
                         calendar.select(day)
-                    } label: {
-                        VStack(spacing: 1) {
-                            Text("\(system.component(.day, from: day))")
-                                .font(.rounded(10.5, weight: isToday ? .bold : .semibold))
-                                .foregroundStyle(isToday ? .white : .white.opacity(inMonth ? 0.9 : 0.25))
-                                .frame(width: 19, height: 15)
-                                .background {
-                                    if isToday {
-                                        Circle().fill(Color.accentColor)
-                                    } else if isSelected {
-                                        Circle().stroke(.white.opacity(0.5), lineWidth: 1.2)
-                                    }
-                                }
-                            Circle()
-                                .fill(.white.opacity(calendar.hasEvents(on: day) && inMonth ? 0.55 : 0))
-                                .frame(width: 3, height: 3)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .contentShape(.rect)
                     }
-                    .buttonStyle(.pressable)
                 }
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.9), value: calendar.month)
+    }
+
+    private func inMonthColors(for day: Date, system: Calendar) -> [Color] {
+        guard system.isDate(day, equalTo: calendar.month, toGranularity: .month) else { return [] }
+        var colors: [Color] = []
+        for event in calendar.events(on: day) where !colors.contains(event.color) {
+            colors.append(event.color)
+            if colors.count == 3 { break }
+        }
+        return colors
     }
 
     private func chevron(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -944,6 +938,67 @@ private struct MonthGrid: View {
                 .contentShape(.circle)
         }
         .buttonStyle(.pressable)
+    }
+}
+
+private struct DayCell: View {
+    let day: Int
+    let colors: [Color]
+    let inMonth: Bool
+    let isToday: Bool
+    let isSelected: Bool
+    let isWeekend: Bool
+    let select: () -> Void
+    @State private var isHovering = false
+
+    private var numberColor: Color {
+        if isToday { return .white }
+        if !inMonth { return .white.opacity(0.2) }
+        return .white.opacity(isWeekend ? 0.6 : 0.92)
+    }
+
+    var body: some View {
+        Button(action: select) {
+            VStack(spacing: 2) {
+                Text("\(day)")
+                    .font(.rounded(11, weight: isToday || isSelected ? .bold : .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(numberColor)
+                HStack(spacing: 2) {
+                    ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                        Circle()
+                            .fill(isToday ? .white : color)
+                            .frame(width: 3.5, height: 3.5)
+                    }
+                }
+                .frame(height: 4)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 24)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(background)
+            }
+            .overlay {
+                if isSelected, !isToday {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(.white.opacity(0.22), lineWidth: 1)
+                }
+            }
+            .contentShape(.rect(cornerRadius: 7))
+        }
+        .buttonStyle(.pressable)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 1), value: isSelected)
+    }
+
+    private var background: AnyShapeStyle {
+        if isToday { return AnyShapeStyle(Color.accentColor.gradient) }
+        if isSelected { return AnyShapeStyle(.white.opacity(0.14)) }
+        if isHovering, inMonth { return AnyShapeStyle(.white.opacity(0.07)) }
+        return AnyShapeStyle(.clear)
     }
 }
 

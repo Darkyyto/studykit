@@ -279,6 +279,7 @@ private struct ProfilePane: View {
 private struct FocusPane: View {
     @AppStorage(Preference.homeAirport) private var homeCode = Airport.fallback.code
     @AppStorage(Preference.showsMenuBarExtra) private var showsMenuBarExtra = true
+    @AppStorage(Preference.keepsRunning) private var keepsRunning = true
     @AppStorage("rounds") private var rounds = 1
     @AppStorage("breakMinutes") private var breakMinutes = 5
 
@@ -304,8 +305,13 @@ private struct FocusPane: View {
                         .font(.numeric(14, weight: .semibold))
                         .fixedSize()
                 }
-                SettingsRow(title: "Timer in the menu bar", detail: "Shows the time left while a session runs.", showsDivider: false) {
+                SettingsRow(title: "Timer in the menu bar", detail: "Shows the time left while a session runs.") {
                     Toggle("", isOn: $showsMenuBarExtra)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+                SettingsRow(title: "Keep running in the background", detail: "Closing the window leaves FocusKit in the menu bar and the notch, out of the Dock.", showsDivider: false) {
+                    Toggle("", isOn: $keepsRunning)
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }

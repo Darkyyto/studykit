@@ -66,6 +66,12 @@ Volume, brightness and charging show up in the notch too, as a slim bar on eithe
 
 At rest the notch matches your Mac's own, so nothing shows until something happens. Choose when it appears in **Settings › Notch**.
 
+## Menu bar
+
+FocusKit keeps a small icon in the menu bar, with the time left while a session runs. Click it to pause, skip or end the session, start a mode, or open FocusKit, Settings, check for updates, restart or quit.
+
+Closing the window does not quit the app. FocusKit leaves the Dock and keeps running in the menu bar and the notch, ready for the next session. Turn this off in **Settings › Focus**.
+
 ## Keyboard shortcuts
 
 | Action | Shortcut |

@@ -2,14 +2,21 @@ import SwiftUI
 
 struct MenuBarLabel: View {
     let engine: FocusEngine
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if engine.isActive {
-            Label(engine.remaining(at: engine.now).clock, systemImage: symbol)
-                .labelStyle(.titleAndIcon)
-                .monospacedDigit()
-        } else {
-            Image(systemName: "waveform.path")
+        Group {
+            if engine.isActive {
+                Label(engine.remaining(at: engine.now).clock, systemImage: symbol)
+                    .labelStyle(.titleAndIcon)
+                    .monospacedDigit()
+            } else {
+                Image(systemName: "waveform.path")
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openMainWindow)) { _ in
+            openWindow(id: "main")
+            NSApp.activate()
         }
     }
 
@@ -25,6 +32,7 @@ struct MenuBarPanel: View {
     @Environment(Library.self) private var library
     @Environment(VoiceRecorder.self) private var recorder
     @Environment(NoteEnhancer.self) private var enhancer
+    @Environment(Updater.self) private var updater
     @AppStorage(Preference.persona) private var persona = Persona.personal
     @Environment(\.openWindow) private var openWindow
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
@@ -58,6 +66,7 @@ struct MenuBarPanel: View {
         }
         .padding(18)
         .frame(width: 300)
+        .safeAreaInset(edge: .bottom, spacing: 0) { menu }
         .background {
             ZStack {
                 Color.black
@@ -147,6 +156,52 @@ struct MenuBarPanel: View {
         }
     }
 
+    private var menu: some View {
+        VStack(spacing: 2) {
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.bottom, 4)
+            MenuRow(title: "Open FocusKit", shortcut: nil) { openMain() }
+            SettingsLink {
+                MenuRowLabel(title: "Settings…", shortcut: "⌘,")
+            }
+            .buttonStyle(MenuRowStyle())
+            .simultaneousGesture(TapGesture().onEnded { NSApp.activate() })
+            MenuRow(title: "Check for Updates…", shortcut: nil) {
+                openMain()
+                Task {
+                    await updater.check(userInitiated: true)
+                    if let release = updater.available {
+                        updater.presented = release
+                    }
+                }
+            }
+            Rectangle()
+                .fill(.white.opacity(0.08))
+                .frame(height: 1)
+                .padding(.vertical, 4)
+            MenuRow(title: "Restart FocusKit", shortcut: nil) { restart() }
+            MenuRow(title: "Quit FocusKit", shortcut: "⌘Q") { NSApp.terminate(nil) }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 8)
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func openMain() {
+        openWindow(id: "main")
+        NSApp.activate()
+    }
+
+    private func restart() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; open \"$2\"", "sh", String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundleURL.path(percentEncoded: false)]
+        try? process.run()
+        NSApp.terminate(nil)
+    }
+
     private func control(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
@@ -175,5 +230,60 @@ struct MenuBarPanel: View {
                 .contentShape(.capsule)
         }
         .buttonStyle(.pressable)
+    }
+}
+
+private struct MenuRowLabel: View {
+    let title: String
+    let shortcut: String?
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 13, weight: .regular))
+            Spacer()
+            if let shortcut {
+                Text(shortcut)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+        .foregroundStyle(.white.opacity(0.9))
+        .padding(.horizontal, 10)
+        .frame(height: 26)
+        .contentShape(.rect)
+    }
+}
+
+private struct MenuRow: View {
+    let title: String
+    let shortcut: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            MenuRowLabel(title: title, shortcut: shortcut)
+        }
+        .buttonStyle(MenuRowStyle())
+    }
+}
+
+private struct MenuRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HoverRow(configuration: configuration)
+    }
+
+    private struct HoverRow: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var isHovering = false
+
+        var body: some View {
+            configuration.label
+                .background {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.accentColor.opacity(configuration.isPressed ? 1 : (isHovering ? 0.85 : 0)))
+                }
+                .onHover { isHovering = $0 }
+        }
     }
 }

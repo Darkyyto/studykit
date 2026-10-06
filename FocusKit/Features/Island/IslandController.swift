@@ -126,7 +126,7 @@ final class IslandController {
         case .compact: return hasActivity ? CGSize(width: base.width + Self.wing * 2, height: base.height) : base
         case .peek: return CGSize(width: base.width + 140, height: base.height + 34)
         case .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
-        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height)
+        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height + (tab == .calendar ? 40 : 0))
         }
     }
 
