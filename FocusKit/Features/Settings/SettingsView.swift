@@ -82,6 +82,20 @@ struct SettingsView: View {
         }
         .frame(width: 780, height: 560)
         .preferredColorScheme(.light)
+        .onAppear { clearFocus(in: NSApp.keyWindow) }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { notification in
+            clearFocus(in: notification.object as? NSWindow)
+        }
+        .onChange(of: pane) { clearFocus(in: NSApp.keyWindow) }
+    }
+
+    private func clearFocus(in window: NSWindow?) {
+        guard let window, window.title.localizedStandardContains("Settings") else { return }
+        DispatchQueue.main.async {
+            if window.firstResponder is NSText {
+                window.makeFirstResponder(nil)
+            }
+        }
     }
 
     private var sidebar: some View {
@@ -205,7 +219,6 @@ private struct ProfilePane: View {
     @AppStorage(Preference.name) private var name = ""
     @AppStorage(Preference.hasOnboarded) private var hasOnboarded = true
     @AppStorage(Preference.isReplayingOnboarding) private var isReplayingOnboarding = false
-    @FocusState private var editsName: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -248,10 +261,7 @@ private struct ProfilePane: View {
                     TextField("Name", text: $name)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 200)
-                        .focused($editsName)
-                        .onAppear {
-                            DispatchQueue.main.async { editsName = false }
-                        }
+
                 }
                 SettingsRow(title: "Setup", detail: "Walk through the welcome screens again.", showsDivider: false) {
                     Button("Replay Onboarding") {

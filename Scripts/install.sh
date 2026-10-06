@@ -13,8 +13,15 @@ hdiutil attach -quiet -nobrowse -readonly -mountpoint "$WORK/volume" "$WORK/Focu
 
 if pgrep -x FocusKit >/dev/null 2>&1; then
   echo "Closing FocusKit…"
-  osascript -e 'tell application "FocusKit" to quit' >/dev/null 2>&1 || true
-  while pgrep -x FocusKit >/dev/null 2>&1; do sleep 0.5; done
+  osascript -e 'tell application id "dev.focuskit.FocusKit" to quit' >/dev/null 2>&1 || true
+  waited=0
+  while pgrep -x FocusKit >/dev/null 2>&1; do
+    sleep 0.5
+    waited=$((waited + 1))
+    if [ "$waited" -eq 10 ]; then
+      echo "FocusKit is still open. Quit it with ⌘Q and the update continues."
+    fi
+  done
 fi
 
 echo "Installing in Applications…"

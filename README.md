@@ -12,70 +12,56 @@
 
 # FocusKit
 
-A calm, focused workspace for macOS. Pick what you are working on, choose a mode, and watch it unfold while you work.
+A calm workspace for your Mac. Say what you are working on, pick a mode, and watch the session unfold while you focus. Lectures and meetings are recorded, transcribed and turned into notes, all on device.
 
-FocusKit adapts to how you use it. Students get subjects, exam countdowns and lecture notes that turn into flashcards. Professionals get projects, deadlines and meeting minutes with action items.
-
-## Modes
-
-- **Flight** – check in, pick a seat, scan your boarding pass, then watch your plane glide along a real great-circle route on a calm map or satellite view.
-- **Orbit** – choose a mission to the Moon, Mars, Saturn or Neptune, launch, and trace one long loop around it.
-- **Bloom** – plant a daisy, sunflower, tulip or lavender seed and watch it grow leaf by leaf.
-- **Tide** – pick a boat and the light, cast off, and let the water rise as you read.
-
-Every mode supports rounds with breaks in between. Breaks switch to a guided breathing scene.
-
-## Sections
-
-- **Focus** – intention, goal, duration, rounds and mode in one place.
-- **Subjects / Projects / Goals** – weekly targets, progress rings and exam or deadline countdowns.
-- **Journal** – streaks, a weekly chart by mode, a 20 week heatmap and every past session, with its notes, tasks, lecture notes or meeting minutes.
-
-Lecture and Meeting sessions record and transcribe live on device with `SpeechAnalyzer`. When they end, Apple Intelligence turns the transcript into study notes with flashcards, or minutes with action items.
-- **Side notch** – a small black notch on the right edge of the screen. Hover it to see the current session, control it, or start a new one from any app.
-- **Menu bar** – remaining time and quick controls.
-
-## Requirements
-
-- macOS 26 or later
-- Xcode 26 or later
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) if you change the project layout
+FocusKit adapts to who you are. Students get subjects, exam countdowns and lectures that turn into flashcards. Professionals get projects, deadlines and meeting minutes with action items. You can switch profile at any time.
 
 ## Installing
 
-The quickest way is one line in Terminal. It downloads the latest release, installs it in Applications and opens it, with no Gatekeeper prompt:
+One line in Terminal downloads the latest version, installs it in Applications and opens it:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Darkyyto/studykit/main/Scripts/install.sh | sh
 ```
 
-Run the same line again to update. Your sessions, lectures and notes are kept.
+Prefer the disk image? Download `FocusKit.dmg` from the [releases page](../../releases) and drag FocusKit into Applications. FocusKit is not notarized by Apple, so the first time macOS asks you to confirm it in **System Settings › Privacy & Security › Open Anyway**.
 
-Prefer the disk image? FocusKit is not notarized by Apple, so macOS asks once:
+After that, updates install themselves. When a new version is out, FocusKit shows it at the bottom of the window: press **Update**, then **Restart and Update**. Your session is saved, the app is replaced and it opens again where you left it. A backup of your library is made before every update.
 
-1. Download `FocusKit.dmg` from the [releases page](../../releases) and drag FocusKit into Applications.
-2. Open it. macOS will say it cannot verify the developer.
-3. Open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
+## Modes
 
-Updates are offered inside the app as well, under Settings › Updates.
+- **Flight** – your session becomes a flight along a real route, followed on a calm map or satellite view, with clouds passing under the plane.
+- **Orbit** – a satellite traces one long loop around a planet, with its moon, a nebula and the odd shooting star.
+- **Bloom** – a seed grows leaf by leaf on a quiet hill and flowers when you finish.
+- **Tide** – the water rises around a small boat as the session goes on.
 
-## Building
+Sessions can have several rounds with breaks in between. Breaks switch to a guided breathing scene, or to a few flashcards when you are studying.
 
-```sh
-git clone https://github.com/<you>/FocusKit.git
-cd FocusKit
-make run
-```
+## Sections
 
-`project.yml` is the source of truth for the Xcode project. After adding or moving files, run `make project`.
+- **Focus** – what you are working on, the mode, the duration and, under Customize, the session type, rounds, subject, a PDF to read and a task list.
+- **Subjects** (or Projects, or Goals) – weekly targets and exam or deadline countdowns. Open a subject to see everything in it: its lectures, PDFs, flashcards and recent sessions, and add more.
+- **Lectures** (or Meetings) – every recording, grouped by day, with search and subject filters. Rename, move, merge, export as PDF or delete, one at a time or several at once with **Select**.
+- **Journal** – streaks, a weekly chart, a 20 week heatmap and every past session with its notes.
 
-| Command | What it does |
-| --- | --- |
-| `make run` | Builds a debug copy and launches it |
-| `make dmg` | Builds a universal release and packages `dist/FocusKit-<version>.dmg` |
+## Recording
 
-Pushing a tag such as `v0.2.0` builds the disk image on GitHub Actions and attaches it to a release.
+Lecture and Meeting sessions record while you focus. The live transcript appears beside your own notes.
 
+- Quiet or distant voices are boosted and low hum is filtered out, so a professor across the room is still heard.
+- The transcript is saved every few seconds and the audio survives a crash. An interrupted recording is recovered the next time FocusKit opens.
+- When the recording ends, the whole lecture is transcribed again with a more accurate model. Apple Intelligence then fixes misheard words from context and writes clean notes, a summary and flashcards, or minutes with decisions and action items.
+- Recording keeps going while you use other sections and stops when the session ends. It can also be stopped from Lectures, the notch or the menu bar.
+- Two parts of the same lecture can be merged into one, audio, transcript, notes and flashcards included.
+
+## Notch
+
+On Macs with a notch, FocusKit lives in it. While a session runs or music plays, the time left and the song appear on either side of the camera. Move the pointer to the top of the screen and it opens:
+
+- **Home** – the current session with its controls, the song playing in Spotify or Music, or quick buttons to start a mode.
+- **Calendar** – the month and the day's events from your calendars.
+
+Choose when it shows in **Settings › Notch**.
 
 ## Keyboard shortcuts
 
@@ -86,22 +72,27 @@ Pushing a tag such as `v0.2.0` builds the disk image on GitHub Actions and attac
 | Pause / resume | Space or ⇧⌘P |
 | Skip round or break | ⇧⌘K |
 | End session | ⌘. |
-| New goal | ⌘N |
+| New subject | ⌘N |
+| Export lecture as PDF | ⇧⌘E |
 
 ## Privacy
 
-The only network traffic is map imagery for the Flight mode, loaded by Apple Maps. Goals, sessions and recordings are stored in the app container under `Application Support/FocusKit`. Speech recognition and note polishing run on this Mac; language models are downloaded by the system the first time a language is used.
+There is no account, no analytics and no server. Your library, recordings and settings stay on this Mac. Speech recognition, notes and flashcards run on device. FocusKit only goes online to load map imagery for Flight, which Apple Maps provides, and to check GitHub for a new version, which you can turn off in Settings › Updates.
 
-## Project layout
+## Building
 
+Requires macOS 26, Xcode 26 and [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+
+```sh
+make run
 ```
-FocusKit/
-  App/            entry point, window, navigation and commands
-  Models/         plain value types: goals, flights, recordings, airports
-  Services/       persistence, flight timer, audio capture, transcription
-  DesignSystem/   palette, typography and shared components
-  Features/       one folder per section
-```
+
+| Command | What it does |
+| --- | --- |
+| `make run` | Builds a debug copy and opens it |
+| `make dmg` | Builds a universal release in `dist/` |
+
+Pushing a tag such as `v0.4.0` builds the disk image on GitHub Actions and publishes the release that the app offers as an update.
 
 ## License
 
