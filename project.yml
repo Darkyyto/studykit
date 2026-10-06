@@ -1,0 +1,66 @@
+name: FocusKit
+
+options:
+  bundleIdPrefix: dev.focuskit
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.2.3"
+    CURRENT_PROJECT_VERSION: "2"
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  FocusKit:
+    type: application
+    platform: macOS
+    sources:
+      - path: FocusKit
+    info:
+      path: FocusKit/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: FocusKit
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSHumanReadableCopyright: Released under the MIT License.
+        FocusKitRepository: $(FOCUSKIT_REPOSITORY)
+        NSMicrophoneUsageDescription: FocusKit records your voice notes and transcribes them on this Mac.
+        NSSpeechRecognitionUsageDescription: FocusKit transcribes your recordings on device. Audio never leaves this Mac.
+        NSAppleEventsUsageDescription: FocusKit shows the song playing in Spotify or Music in the side notch and lets you play, pause and skip from there.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: PDF document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - com.adobe.pdf
+    entitlements:
+      path: FocusKit/Resources/FocusKit.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.device.audio-input: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.downloads.read-write: true
+        com.apple.security.network.client: true
+        com.apple.security.automation.apple-events: true
+        com.apple.security.temporary-exception.apple-events:
+          - com.spotify.client
+          - com.apple.Music
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.focuskit.FocusKit
+        PRODUCT_NAME: FocusKit
+        FOCUSKIT_REPOSITORY: Darkyyto/studykit
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
