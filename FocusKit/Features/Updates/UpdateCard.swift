@@ -4,6 +4,7 @@ struct UpdateCard: View {
     let release: Updater.Release
     @Environment(Updater.self) private var updater
     @Environment(\.closeCard) private var close
+    @State private var copied = false
 
     private let tint = FocusMode.flight.palette.deep
 
@@ -79,6 +80,7 @@ struct UpdateCard: View {
                 .tint(tint)
                 .keyboardShortcut(.defaultAction)
 
+                command
                 HStack(spacing: 18) {
                     Button("Later") { close() }
                         .keyboardShortcut(.cancelAction)
@@ -168,6 +170,20 @@ struct UpdateCard: View {
             .controlSize(.large)
         }
         .transition(.blurReplace)
+    }
+
+    private var command: some View {
+        Button {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString("curl -fsSL https://raw.githubusercontent.com/\(Updater.repositoryName)/main/Scripts/install.sh | sh", forType: .string)
+            copied = true
+        } label: {
+            Label(copied ? "Copied. Paste it in Terminal." : "Or copy the one-line Terminal update", systemImage: copied ? "checkmark" : "terminal")
+                .font(.rounded(12, weight: .semibold))
+                .foregroundStyle(Palette.inkSecondary)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
     }
 
     private var promise: some View {

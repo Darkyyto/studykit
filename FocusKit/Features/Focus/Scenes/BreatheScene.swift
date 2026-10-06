@@ -25,9 +25,11 @@ enum BreathCycle {
 struct BreatheScene: View {
     var insets = EdgeInsets(top: 90, leading: 60, bottom: 280, trailing: 60)
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.isOnScreen) private var isOnScreen
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: FrameRate.interval(active: appearsActive), paused: reduceMotion || !isOnScreen)) { context in
             let time = reduceMotion ? BreathCycle.inhale : context.date.timeIntervalSinceReferenceDate
             let expansion = BreathCycle.expansion(at: time)
             let palette = Palette.rest

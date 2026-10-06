@@ -10,11 +10,18 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "0.2.4"
+    MARKETING_VERSION: "0.3.0"
     CURRENT_PROJECT_VERSION: "2"
     DEAD_CODE_STRIPPING: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     SWIFT_STRICT_CONCURRENCY: complete
+  configs:
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: -Osize
+      STRIP_INSTALLED_PRODUCT: YES
+      STRIP_STYLE: all
+      DEPLOYMENT_POSTPROCESSING: YES
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
 
 targets:
   FocusKit:
@@ -34,6 +41,7 @@ targets:
         FocusKitRepository: $(FOCUSKIT_REPOSITORY)
         NSMicrophoneUsageDescription: FocusKit records your voice notes and transcribes them on this Mac.
         NSSpeechRecognitionUsageDescription: FocusKit transcribes your recordings on device. Audio never leaves this Mac.
+        NSCalendarsFullAccessUsageDescription: FocusKit shows your classes and meetings in the notch. Your calendar never leaves this Mac.
         NSAppleEventsUsageDescription: FocusKit shows the song playing in Spotify or Music in the side notch and lets you play, pause and skip from there.
         CFBundleDocumentTypes:
           - CFBundleTypeName: PDF document
@@ -48,6 +56,7 @@ targets:
         com.apple.security.device.audio-input: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.downloads.read-write: true
+        com.apple.security.personal-information.calendars: true
         com.apple.security.network.client: true
         com.apple.security.automation.apple-events: true
         com.apple.security.temporary-exception.apple-events:

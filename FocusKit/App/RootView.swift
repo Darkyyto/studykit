@@ -36,6 +36,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct RootView: View {
     @AppStorage("section") private var section = AppSection.focus
     @State private var modal: Modal?
+    @State private var isOnScreen = true
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
     @Environment(FocusEngine.self) private var engine
     @AppStorage(Preference.hasOnboarded) private var hasOnboarded = false
@@ -45,6 +46,10 @@ struct RootView: View {
     @Environment(VoiceRecorder.self) private var recorder
     @Environment(NoteEnhancer.self) private var enhancer
     @AppStorage(Preference.persona) private var persona = Persona.personal
+
+    private var sessionIsOpen: Bool {
+        engine.isActive || engine.phase.isComplete
+    }
 
     private var isImmersive: Bool {
         section == .focus && (engine.isActive || engine.phase.isComplete)
@@ -71,12 +76,12 @@ struct RootView: View {
         }
         .animation(Motion.morph, value: hasOnboarded)
         .onAppear {
-            if engine.plan == nil {
+            if !sessionIsOpen {
                 recorder.finishSession(engine: engine, enhancer: enhancer, persona: persona)
             }
         }
-        .onChange(of: engine.plan == nil) { _, ended in
-            if ended {
+        .onChange(of: sessionIsOpen) { _, open in
+            if !open {
                 recorder.finishSession(engine: engine, enhancer: enhancer, persona: persona)
             }
         }
@@ -100,7 +105,6 @@ struct RootView: View {
                 .transition(.opacity)
                 .id(section)
                 .environment(\.chromeInset, showsChrome ? 72 : 44)
-                .environment(\.present, PresentAction { [binding = $modal] in binding.wrappedValue = $0 })
 
             TabBar(selection: $section)
                 .padding(.top, 12)
@@ -122,6 +126,9 @@ struct RootView: View {
             switch modal {
             case .goal(let goal):
                 GoalEditor(goal: goal)
+            case .subject(let id):
+                SubjectDetail(goalID: id)
+                    .frame(width: 760, height: 620)
             case .recording(let recording):
                 RecordingDetail(recording: recording)
                     .frame(width: 720, height: 600)
@@ -129,6 +136,15 @@ struct RootView: View {
         }
         .card(item: $updater.presented) { release in
             UpdateCard(release: release)
+        }
+        .environment(\.present, PresentAction { [binding = $modal] in binding.wrappedValue = $0 })
+        .environment(\.isOnScreen, isOnScreen)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window.title == "FocusKit" else { return }
+            isOnScreen = window.occlusionState.contains(.visible) && !window.isMiniaturized
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showFocus)) { _ in
+            withAnimation(Motion.standard) { section = .focus }
         }
     }
 

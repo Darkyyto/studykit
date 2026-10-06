@@ -30,6 +30,7 @@ final class Updater {
     @ObservationIgnored private var download: Task<Void, Never>?
 
     nonisolated static let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    nonisolated static var repositoryName: String { repository }
     nonisolated private static let repository = Bundle.main.object(forInfoDictionaryKey: "FocusKitRepository") as? String ?? ""
     private static let checksAutomaticallyKey = "checksForUpdates"
     private static let lastCheckKey = "lastUpdateCheck"

@@ -129,6 +129,22 @@ struct Transcription: Sendable {
         return output
     }
 
+    static func isInstalled(_ requested: Locale) async -> Bool {
+        guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested) else { return false }
+        return await SpeechTranscriber.installedLocales.contains { $0.identifier(.bcp47) == locale.identifier(.bcp47) }
+    }
+
+    static func install(_ requested: Locale) async throws {
+        guard SpeechTranscriber.isAvailable else { throw Failure.unavailable }
+        guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: requested) else {
+            throw Failure.unsupportedLocale(requested)
+        }
+        let transcriber = SpeechTranscriber(locale: locale, preset: .transcription)
+        if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            try await request.downloadAndInstall()
+        }
+    }
+
     static func supportedLocales() async -> [Locale] {
         await SpeechTranscriber.supportedLocales.sorted {
             $0.localizedName.localizedStandardCompare($1.localizedName) == .orderedAscending

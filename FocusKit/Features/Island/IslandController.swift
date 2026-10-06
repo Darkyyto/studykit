@@ -28,18 +28,9 @@ final class IslandController {
         case expanded
     }
 
-    enum Section: Hashable {
-        case session
-        case music
-        case launcher
-
-        var height: CGFloat {
-            switch self {
-            case .session: 252
-            case .music: 132
-            case .launcher: 196
-            }
-        }
+    enum Tab: Hashable {
+        case home
+        case calendar
     }
 
     struct Announcement: Equatable {
@@ -50,6 +41,8 @@ final class IslandController {
 
     private(set) var shape: Shape = .hidden
     private(set) var announcement: Announcement?
+    private(set) var notch = CGSize(width: 0, height: 32)
+    var tab = Tab.home
 
     @ObservationIgnored let engine: FocusEngine
     @ObservationIgnored let recorder: VoiceRecorder
@@ -63,24 +56,25 @@ final class IslandController {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
-    static let canvas = CGSize(width: 260, height: 520)
-    static let expandedWidth: CGFloat = 216
-    static let peekSize = CGSize(width: 200, height: 64)
-    static let compactSize = CGSize(width: 32, height: 92)
-    static let idleSize = CGSize(width: 5, height: 48)
-    static let fillet: CGFloat = 10
+    static let canvas = CGSize(width: 760, height: 340)
+    static let expandedSize = CGSize(width: 640, height: 252)
+    static let wing: CGFloat = 70
+    static let fillet: CGFloat = 8
 
-    init(engine: FocusEngine, recorder: VoiceRecorder, library: Library, nowPlaying: NowPlaying, soundscape: Soundscape) {
+    let calendar = CalendarStore()
+
+    init(engine: FocusEngine, recorder: VoiceRecorder, library: Library, nowPlaying: NowPlaying, soundscape: Soundscape, enhancer: NoteEnhancer) {
         self.engine = engine
         self.recorder = recorder
         self.nowPlaying = nowPlaying
 
-        let content = IslandView(controller: self)
+        let content = IslandView(controller: self, calendar: calendar)
             .environment(engine)
             .environment(recorder)
             .environment(library)
             .environment(nowPlaying)
             .environment(soundscape)
+            .environment(enhancer)
         panel = NotchPanel(content: content, size: Self.canvas)
 
         let center = NotificationCenter.default
@@ -114,24 +108,30 @@ final class IslandController {
         isBusy || nowPlaying.isPlaying
     }
 
-    var sections: [Section] {
-        var sections: [Section] = []
-        if isBusy { sections.append(.session) }
-        if nowPlaying.hasTrack { sections.append(.music) }
-        return sections.isEmpty ? [.launcher] : sections
+    var hasHardwareNotch: Bool {
+        notch.width > 0
     }
 
     var size: CGSize {
+        let base = CGSize(width: max(notch.width, 180), height: notch.height)
         switch shape {
-        case .hidden: CGSize(width: 0, height: Self.idleSize.height)
-        case .compact: hasActivity ? Self.compactSize : Self.idleSize
-        case .peek: Self.peekSize
-        case .expanded:
-            CGSize(
-                width: Self.expandedWidth,
-                height: 28 + sections.reduce(0) { $0 + $1.height } + CGFloat(max(0, sections.count - 1)) * 17
-            )
+        case .hidden: return base
+        case .compact: return CGSize(width: base.width + Self.wing * 2, height: base.height)
+        case .peek: return CGSize(width: base.width + 200, height: base.height + 40)
+        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height)
         }
+    }
+
+    var bottomRadius: CGFloat {
+        switch shape {
+        case .hidden, .compact: min(12, notch.height / 2)
+        case .peek: 20
+        case .expanded: 30
+        }
+    }
+
+    var isVisible: Bool {
+        shape != .hidden || hasHardwareNotch
     }
 
     private var presence: Presence {
@@ -195,24 +195,33 @@ final class IslandController {
         }
     }
 
+    private var screen: NSScreen? {
+        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
+    }
+
     private func reposition() {
-        guard let panel, let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main else { return }
+        guard let panel, let screen else { return }
+        if screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+            notch = CGSize(width: screen.frame.width - left.width - right.width, height: screen.safeAreaInsets.top)
+        } else {
+            notch = CGSize(width: 0, height: max(24, screen.frame.maxY - screen.visibleFrame.maxY))
+        }
         panel.setFrame(CGRect(
-            x: screen.frame.maxX - Self.canvas.width,
-            y: screen.visibleFrame.midY - Self.canvas.height / 2 + screen.visibleFrame.height * 0.12,
+            x: screen.frame.midX - Self.canvas.width / 2,
+            y: screen.frame.maxY - Self.canvas.height,
             width: Self.canvas.width,
             height: Self.canvas.height
         ), display: true)
     }
 
     private func pointerMoved() {
-        guard shape == .compact || shape == .peek, let panel else {
+        guard presence != .off, shape != .expanded, let screen else {
             hoverIntent?.cancel()
             hoverIntent = nil
             return
         }
-        let height = max(size.height, Self.compactSize.height)
-        let band = CGRect(x: panel.frame.maxX - 8, y: panel.frame.midY - height / 2 - 12, width: 8, height: height + 24)
+        let width = max(size.width, max(notch.width, 180))
+        let band = CGRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - notch.height - 4, width: width, height: notch.height + 4)
         guard band.contains(NSEvent.mouseLocation) else {
             hoverIntent?.cancel()
             hoverIntent = nil
@@ -220,10 +229,10 @@ final class IslandController {
         }
         guard hoverIntent == nil else { return }
         hoverIntent = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(120))
+            try? await Task.sleep(for: .milliseconds(140))
             guard !Task.isCancelled, let self else { return }
             self.hoverIntent = nil
-            if self.shape == .compact || self.shape == .peek {
+            if self.shape != .expanded {
                 self.nowPlaying.refreshIfNeeded()
                 self.transition(to: .expanded)
             }
@@ -233,7 +242,7 @@ final class IslandController {
     private func transition(to target: Shape) {
         guard target != shape else { return }
         let opening = target == .expanded || target == .peek
-        withAnimation(opening ? .spring(response: 0.42, dampingFraction: 0.8) : .spring(response: 0.34, dampingFraction: 1)) {
+        withAnimation(opening ? .spring(response: 0.44, dampingFraction: 0.78) : .spring(response: 0.36, dampingFraction: 0.95)) {
             shape = target
         }
         panel?.ignoresMouseEvents = target != .expanded
@@ -250,10 +259,10 @@ final class IslandController {
         guard let panel else { return }
         let size = size
         let area = CGRect(
-            x: panel.frame.maxX - size.width - 14,
-            y: panel.frame.midY - size.height / 2 - 14,
-            width: size.width + 14,
-            height: size.height + 28
+            x: panel.frame.midX - size.width / 2 - 16,
+            y: panel.frame.maxY - size.height - 16,
+            width: size.width + 32,
+            height: size.height + 16
         )
         if area.contains(NSEvent.mouseLocation) {
             outsideSince = nil
@@ -276,7 +285,7 @@ private final class NotchPanel: NSPanel {
             defer: false
         )
         isFloatingPanel = true
-        level = .statusBar
+        level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 3)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = false

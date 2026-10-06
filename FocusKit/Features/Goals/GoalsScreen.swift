@@ -32,7 +32,7 @@ struct GoalsScreen: View {
                     weekSummary
                     VStack(spacing: 8) {
                         ForEach(active) { goal in
-                            GoalRow(goal: goal, persona: persona) { present(.goal(goal)) }
+                            GoalRow(goal: goal, persona: persona) { present(.subject(goal.id)) }
                                 .contextMenu { menu(for: goal) }
                                 .transition(.opacity.combined(with: .move(edge: .top)))
                         }
@@ -157,7 +157,7 @@ struct GoalsScreen: View {
 
             if showsArchived {
                 ForEach(archived) { goal in
-                    GoalRow(goal: goal, persona: persona) { present(.goal(goal)) }
+                    GoalRow(goal: goal, persona: persona) { present(.subject(goal.id)) }
                         .opacity(0.6)
                         .contextMenu { menu(for: goal) }
                 }
@@ -168,6 +168,7 @@ struct GoalsScreen: View {
 
     @ViewBuilder
     private func menu(for goal: Goal) -> some View {
+        Button("Open") { present(.subject(goal.id)) }
         Button("Edit…") { present(.goal(goal)) }
         Button(goal.isArchived ? "Restore" : "Archive") {
             var updated = goal

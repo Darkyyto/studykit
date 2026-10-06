@@ -1,3 +1,4 @@
+import EventKit
 import AVFoundation
 import FoundationModels
 import SwiftUI
@@ -495,92 +496,182 @@ private struct StepDots: View {
     }
 }
 
-private struct PermissionsStep: View {
-    @State private var notifications: UNAuthorizationStatus = .notDetermined
-    @State private var microphone = AVAudioApplication.shared.recordPermission
+struct PermissionsStep: View {
+    enum Status: Equatable {
+        case needed
+        case working
+        case granted
+        case blocked(String)
+    }
+
+    @State private var notifications = Status.needed
+    @State private var microphone = Status.needed
+    @State private var speech = Status.needed
+    @State private var calendar = Status.needed
+    @State private var music = Status.needed
     @AppStorage(Preference.homeAirport) private var homeCode = Airport.fallback.code
+    @AppStorage(Preference.transcriptionLocale) private var localeIdentifier = ""
+
+    private var allGranted: Bool {
+        [notifications, microphone, speech, calendar, music].allSatisfy { $0 == .granted }
+    }
 
     var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 22) {
             VStack(spacing: 10) {
                 Text("A few last things")
                     .font(.rounded(40, weight: .bold))
                     .displayTracking(40)
                     .foregroundStyle(Palette.ink)
-                Text("Everything runs on this Mac. You can change these later in Settings.")
+                Text("Everything stays on this Mac. Allow what you need now, or later in Settings.")
                     .font(.rounded(17, weight: .medium))
                     .foregroundStyle(Palette.inkSecondary)
             }
 
-            VStack(spacing: 10) {
-                row(
-                    symbol: "bell.badge.fill",
-                    tint: Palette.rest.deep,
-                    title: "Notifications",
-                    detail: "So you know when a break starts or a session ends.",
-                    granted: notifications == .authorized || notifications == .provisional
-                ) {
-                    Task {
-                        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-                        notifications = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-                    }
-                }
-                row(
-                    symbol: "mic.fill",
-                    tint: Palette.record,
-                    title: "Microphone",
-                    detail: "To transcribe lectures and meetings during a session.",
-                    granted: microphone == .granted
-                ) {
-                    Task {
-                        _ = await AVAudioApplication.requestRecordPermission()
-                        microphone = AVAudioApplication.shared.recordPermission
-                    }
-                }
-                intelligenceRow
-                airportRow
+            Button {
+                Task { await allowAll() }
+            } label: {
+                Label(allGranted ? "All set" : "Allow All", systemImage: allGranted ? "checkmark" : "hand.raised.fill")
+                    .font(.rounded(14, weight: .semibold))
+                    .padding(.horizontal, 6)
             }
-            .frame(width: 560)
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
+            .tint(FocusMode.flight.palette.deep)
+            .disabled(allGranted)
+
+            ScrollView {
+                VStack(spacing: 8) {
+                    row("bell.badge.fill", Palette.rest.deep, "Notifications", "When a break starts or a session ends.", notifications, requestNotifications)
+                    row("mic.fill", Palette.record, "Microphone", "To record lectures and meetings.", microphone, requestMicrophone)
+                    row("waveform", FocusMode.tide.palette.deep, "Transcription", "Downloads \(Locale.speech(localeIdentifier).localizedName) so your first lecture starts right away.", speech, installSpeech)
+                    row("calendar", FocusMode.flight.palette.deep, "Calendar", "Your classes and meetings in the notch.", calendar, requestCalendar)
+                    row("music.note", FocusMode.bloom.palette.deep, "Music control", "Play, pause and skip Spotify or Music from the notch.", music, requestMusic)
+                    intelligenceRow
+                    airportRow
+                }
+                .padding(.vertical, 4)
+            }
+            .scrollIndicators(.never)
+            .frame(width: 580)
+            .frame(maxHeight: 430)
         }
-        .task {
-            notifications = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-        }
+        .task { await refresh() }
     }
 
-    private func row(symbol: String, tint: Color, title: String, detail: String, granted: Bool, action: @escaping () -> Void) -> some View {
+    private func row(_ symbol: String, _ tint: Color, _ title: String, _ detail: String, _ status: Status, _ action: @escaping () async -> Void) -> some View {
         HStack(spacing: 14) {
             icon(symbol, tint: tint)
-            text(title, detail)
+            text(title, status.blockedMessage ?? detail)
             Spacer()
-            if granted {
+            switch status {
+            case .granted:
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 22))
                     .foregroundStyle(FocusMode.bloom.palette.deep)
                     .transition(.scale.combined(with: .opacity))
-            } else {
-                Button("Allow", action: action)
+            case .working:
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 60)
+            case .needed:
+                Button("Allow") { Task { await action() } }
                     .buttonStyle(.glassProminent)
                     .buttonBorderShape(.capsule)
                     .tint(tint)
+            case .blocked:
+                Button("Settings") { openPrivacySettings() }
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.capsule)
             }
         }
-        .padding(14)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        .animation(Motion.settle, value: granted)
+        .padding(12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
+        .animation(Motion.settle, value: status)
+    }
+
+    private func allowAll() async {
+        if notifications == .needed { await requestNotifications() }
+        if microphone == .needed { await requestMicrophone() }
+        if calendar == .needed { await requestCalendar() }
+        if music == .needed { await requestMusic() }
+        if speech == .needed { await installSpeech() }
+    }
+
+    private func refresh() async {
+        let center = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        notifications = switch center {
+        case .authorized, .provisional, .ephemeral: .granted
+        case .denied: .blocked("Notifications are off for FocusKit.")
+        default: .needed
+        }
+        microphone = switch AVAudioApplication.shared.recordPermission {
+        case .granted: .granted
+        case .denied: .blocked("Microphone access is off for FocusKit.")
+        default: .needed
+        }
+        calendar = switch EKEventStore.authorizationStatus(for: .event) {
+        case .fullAccess: .granted
+        case .notDetermined: .needed
+        default: .blocked("Calendar access is off for FocusKit.")
+        }
+        if speech != .working {
+            speech = await Transcription.isInstalled(Locale.speech(localeIdentifier)) ? .granted : .needed
+        }
+        if music == .needed {
+            music = await MusicPermission.status(asking: false)
+        }
+    }
+
+    private func requestNotifications() async {
+        _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+        await refresh()
+    }
+
+    private func requestMicrophone() async {
+        _ = await AVAudioApplication.requestRecordPermission()
+        await refresh()
+    }
+
+    private func requestCalendar() async {
+        _ = try? await EKEventStore().requestFullAccessToEvents()
+        await refresh()
+    }
+
+    private func requestMusic() async {
+        music = .working
+        music = await MusicPermission.status(asking: true)
+    }
+
+    private func installSpeech() async {
+        speech = .working
+        do {
+            try await Transcription.install(Locale.speech(localeIdentifier))
+            speech = .granted
+        } catch {
+            speech = .blocked(error.localizedDescription)
+        }
+    }
+
+    private func openPrivacySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private var intelligenceRow: some View {
         let available = SystemLanguageModel.default.availability == .available
         return HStack(spacing: 14) {
             icon("apple.intelligence", tint: FocusMode.orbit.palette.deep)
-            text("Apple Intelligence", available ? "Ready. Notes are polished on device." : "Turn it on in System Settings to get smart notes.")
+            text("Apple Intelligence", available ? "Ready. Notes and flashcards are written on device." : "Turn it on in System Settings to get smart notes.")
             Spacer()
             Image(systemName: available ? "checkmark.circle.fill" : "exclamationmark.circle")
                 .font(.system(size: 22))
                 .foregroundStyle(available ? FocusMode.bloom.palette.deep : Palette.inkTertiary)
         }
-        .padding(14)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .padding(12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
 
     private var airportRow: some View {
@@ -596,16 +687,16 @@ private struct PermissionsStep: View {
             .labelsHidden()
             .fixedSize()
         }
-        .padding(14)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .padding(12)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
 
     private func icon(_ symbol: String, tint: Color) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.system(size: 16, weight: .semibold))
             .foregroundStyle(.white)
-            .frame(width: 42, height: 42)
-            .background(tint.gradient, in: .rect(cornerRadius: 13))
+            .frame(width: 38, height: 38)
+            .background(tint.gradient, in: .rect(cornerRadius: 12))
     }
 
     private func text(_ title: String, _ detail: String) -> some View {
@@ -616,7 +707,32 @@ private struct PermissionsStep: View {
             Text(detail)
                 .font(.rounded(13, weight: .medium))
                 .foregroundStyle(Palette.inkSecondary)
+                .lineLimit(2)
         }
+    }
+}
+
+private extension PermissionsStep.Status {
+    var blockedMessage: String? {
+        if case .blocked(let message) = self { return message }
+        return nil
+    }
+}
+
+enum MusicPermission {
+    static func status(asking: Bool) async -> PermissionsStep.Status {
+        let results = await Task.detached(priority: .userInitiated) {
+            ["com.spotify.client", "com.apple.Music"].map { bundle -> OSStatus in
+                let target = NSAppleEventDescriptor(bundleIdentifier: bundle)
+                return AEDeterminePermissionToAutomateTarget(target.aeDesc, typeWildCard, typeWildCard, asking)
+            }
+        }.value
+        if results.contains(noErr) { return .granted }
+        if results.contains(OSStatus(errAEEventNotPermitted)) { return .blocked("Music control is off for FocusKit.") }
+        if asking, results.allSatisfy({ $0 == OSStatus(procNotFound) }) {
+            return .blocked("Open Spotify or Music once, then allow it here.")
+        }
+        return .needed
     }
 }
 

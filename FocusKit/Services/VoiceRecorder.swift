@@ -169,6 +169,16 @@ final class VoiceRecorder {
         }
     }
 
+    func stopNow(engine: FocusEngine, enhancer: NoteEnhancer, persona: Persona) {
+        guard isActive else { return }
+        ownedBySession = false
+        Task {
+            guard let recording = await stop() else { return }
+            engine.attachRecording(recording.id)
+            enhancer.enhance(recording, for: persona)
+        }
+    }
+
     func dismissError() {
         errorMessage = nil
     }

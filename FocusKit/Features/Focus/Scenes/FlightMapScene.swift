@@ -173,10 +173,12 @@ private struct Cruise: View {
     let tint: Color
     let isPaused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.isOnScreen) private var isOnScreen
     @State private var start = Date.now
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: isPaused || reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: FrameRate.interval(active: appearsActive), paused: isPaused || reduceMotion || !isOnScreen)) { context in
             let t = reduceMotion ? 0 : context.date.timeIntervalSince(start)
             ZStack {
                 Clouds(time: t)

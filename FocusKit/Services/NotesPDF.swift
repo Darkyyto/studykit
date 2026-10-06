@@ -12,6 +12,34 @@ enum NotesPDF {
         write(document(for: recording, goal: goal, original: original), to: url)
     }
 
+    static func exportAll(_ recordings: [Recording], library: Library) {
+        guard recordings.count > 1 else {
+            if let recording = recordings.first {
+                export(recording, goal: library.goal(recording.goalID), original: false)
+            }
+            return
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = "Export Here"
+        panel.message = "Choose a folder for \(recordings.count) PDFs."
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        var used = Set<String>()
+        for recording in recordings {
+            var name = recording.title.replacing("/", with: "-")
+            var index = 2
+            while used.contains(name) {
+                name = "\(recording.title.replacing("/", with: "-")) \(index)"
+                index += 1
+            }
+            used.insert(name)
+            write(document(for: recording, goal: library.goal(recording.goalID), original: false), to: folder.appending(path: name + ".pdf"))
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([folder])
+    }
+
     private static func write(_ text: NSAttributedString, to url: URL) {
         let info = NSPrintInfo()
         info.paperSize = NSSize(width: 595, height: 842)

@@ -20,12 +20,13 @@ struct FocusKitApp: App {
         let nowPlaying = NowPlaying()
         let soundscape = Soundscape()
         _library = State(initialValue: library)
-        _enhancer = State(initialValue: NoteEnhancer(library: library))
+        let enhancer = NoteEnhancer(library: library)
+        _enhancer = State(initialValue: enhancer)
         _engine = State(initialValue: engine)
         _recorder = State(initialValue: recorder)
         _nowPlaying = State(initialValue: nowPlaying)
         _soundscape = State(initialValue: soundscape)
-        _island = State(initialValue: IslandController(engine: engine, recorder: recorder, library: library, nowPlaying: nowPlaying, soundscape: soundscape))
+        _island = State(initialValue: IslandController(engine: engine, recorder: recorder, library: library, nowPlaying: nowPlaying, soundscape: soundscape, enhancer: enhancer))
     }
 
     var body: some Scene {
@@ -63,6 +64,8 @@ struct FocusKitApp: App {
             MenuBarPanel()
                 .environment(library)
                 .environment(engine)
+                .environment(recorder)
+                .environment(enhancer)
         } label: {
             MenuBarLabel(engine: engine)
         }
@@ -73,6 +76,7 @@ struct FocusKitApp: App {
                 .environment(soundscape)
                 .environment(updater)
         }
+        .windowResizability(.contentSize)
     }
 }
 

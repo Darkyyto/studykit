@@ -4,6 +4,7 @@ struct RecordingsScreen: View {
     @Environment(Library.self) private var library
     @Environment(VoiceRecorder.self) private var recorder
     @Environment(NoteEnhancer.self) private var enhancer
+    @Environment(FocusEngine.self) private var engine
     @AppStorage(Preference.persona) private var persona = Persona.personal
     @State private var query = ""
     @State private var goalFilter: Goal.ID?
@@ -11,6 +12,11 @@ struct RecordingsScreen: View {
     @State private var renaming: Recording?
     @State private var newTitle = ""
     @State private var deleting: Recording?
+    @State private var merging: [Recording] = []
+    @State private var selecting = false
+    @State private var selection: Set<Recording.ID> = []
+    @State private var deletingSelection = false
+    @State private var mergeError: String?
 
     private var visible: [Recording] {
         let needle = query.trimmingCharacters(in: .whitespaces)
@@ -40,10 +46,27 @@ struct RecordingsScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                ScreenTitle(title: persona.recordingsTitle, subtitle: persona.recordingsSubtitle)
+                HStack(alignment: .center) {
+                    ScreenTitle(title: persona.recordingsTitle, subtitle: persona.recordingsSubtitle)
+                    Spacer()
+                    if library.recordings.contains(where: { $0.stage != .recording }) {
+                        Button(selecting ? "Done" : "Select") {
+                            withAnimation(Motion.standard) {
+                                selecting.toggle()
+                                selection = []
+                            }
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.capsule)
+                        .controlSize(.large)
+                        .keyboardShortcut(selecting ? .cancelAction : nil)
+                    }
+                }
 
                 if case .recording(let since) = recorder.state {
-                    LiveCard(since: since, levels: recorder.levels, text: recorder.volatileText.isEmpty ? recorder.finalizedText : recorder.volatileText)
+                    LiveCard(since: since, levels: recorder.levels, text: recorder.volatileText.isEmpty ? recorder.finalizedText : recorder.volatileText) {
+                        recorder.stopNow(engine: engine, enhancer: enhancer, persona: persona)
+                    }
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 }
 
@@ -63,8 +86,18 @@ struct RecordingsScreen: View {
                                 .foregroundStyle(Palette.inkSecondary)
                                 .padding(.leading, 4)
                             ForEach(entry.recordings) { recording in
-                                RecordingRow(recording: recording, persona: persona) {
-                                    present(.recording(recording))
+                                RecordingRow(recording: recording, persona: persona, isSelected: selecting ? selection.contains(recording.id) : nil) {
+                                    if selecting {
+                                        withAnimation(Motion.quick) {
+                                            if selection.contains(recording.id) {
+                                                selection.remove(recording.id)
+                                            } else {
+                                                selection.insert(recording.id)
+                                            }
+                                        }
+                                    } else {
+                                        present(.recording(recording))
+                                    }
                                 } actions: {
                                     actions(for: recording)
                                 }
@@ -81,10 +114,32 @@ struct RecordingsScreen: View {
             .frame(maxWidth: 760)
             .padding(.horizontal, 44)
             .padding(.top, 84)
-            .padding(.bottom, 40)
+            .padding(.bottom, selecting ? 110 : 40)
             .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.never)
+        .overlay(alignment: .bottom) {
+            if selecting {
+                selectionBar
+                    .padding(.bottom, 24)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .confirmationDialog(
+            "Delete \(selection.count) recording\(selection.count == 1 ? "" : "s")?",
+            isPresented: $deletingSelection
+        ) {
+            Button("Delete", role: .destructive) {
+                withAnimation(Motion.standard) {
+                    for recording in selectedRecordings {
+                        library.delete(recording)
+                    }
+                    selection = []
+                }
+            }
+        } message: {
+            Text("The audio, transcripts and notes will be removed from this Mac. This cannot be undone.")
+        }
         .animation(Motion.standard, value: visible.map(\.id))
         .animation(Motion.standard, value: recorder.isActive)
         .alert("Rename", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -98,6 +153,23 @@ struct RecordingsScreen: View {
                 }
                 renaming = nil
             }
+        }
+        .confirmationDialog(
+            "Merge these recordings?",
+            isPresented: Binding(get: { !merging.isEmpty }, set: { if !$0 { merging = [] } })
+        ) {
+            Button("Merge") {
+                merge(merging)
+                merging = []
+                selection = []
+            }
+        } message: {
+            Text("“\(merging.sorted { $0.createdAt < $1.createdAt }.map(\.title).joined(separator: "” and “"))” become one recording, in the order they were recorded. Audio, transcripts, notes and flashcards are joined.")
+        }
+        .alert("Could not merge", isPresented: Binding(get: { mergeError != nil }, set: { if !$0 { mergeError = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(mergeError ?? "")
         }
         .confirmationDialog(
             "Delete “\(deleting?.title ?? "")”?",
@@ -128,6 +200,14 @@ struct RecordingsScreen: View {
                 Button(goal.title) { move(recording, to: goal.id) }
             }
         }
+        Menu("Merge with", systemImage: "arrow.triangle.merge") {
+            ForEach(mergeCandidates(for: recording)) { other in
+                Button("\(other.title) · \(other.createdAt.formatted(date: .abbreviated, time: .shortened))") {
+                    merging = [recording, other]
+                }
+            }
+        }
+        .disabled(mergeCandidates(for: recording).isEmpty || enhancer.isWorking(on: recording))
         Divider()
         Button("Export as PDF…", systemImage: "arrow.down.doc") {
             NotesPDF.export(recording, goal: library.goal(recording.goalID), original: false)
@@ -143,6 +223,82 @@ struct RecordingsScreen: View {
         }
         Divider()
         Button("Delete…", systemImage: "trash", role: .destructive) { deleting = recording }
+    }
+
+    private var selectedRecordings: [Recording] {
+        library.recordings.filter { selection.contains($0.id) }
+    }
+
+    private var selectionBar: some View {
+        GlassEffectContainer {
+            HStack(spacing: 10) {
+                Text(selection.isEmpty ? "Select recordings" : "\(selection.count) selected")
+                    .font(.rounded(14, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .contentTransition(.numericText())
+                    .padding(.leading, 8)
+                    .frame(minWidth: 130, alignment: .leading)
+
+                Button("Select All") {
+                    withAnimation(Motion.quick) { selection = Set(visible.map(\.id)) }
+                }
+                .buttonStyle(.plain)
+                .font(.rounded(13, weight: .semibold))
+                .foregroundStyle(Palette.inkSecondary)
+
+                Divider().frame(height: 22)
+
+                Button("Merge", systemImage: "arrow.triangle.merge") { merging = selectedRecordings }
+                    .disabled(selection.count < 2 || selectedRecordings.contains { enhancer.isWorking(on: $0) })
+                Menu("Move to", systemImage: "folder") {
+                    Button("None") { moveSelection(to: nil) }
+                    Divider()
+                    ForEach(library.activeGoals) { goal in
+                        Button(goal.title) { moveSelection(to: goal.id) }
+                    }
+                }
+                .disabled(selection.isEmpty)
+                Button("PDF", systemImage: "arrow.down.doc") {
+                    NotesPDF.exportAll(selectedRecordings, library: library)
+                }
+                .disabled(selection.isEmpty)
+                Button("Delete", systemImage: "trash", role: .destructive) { deletingSelection = true }
+                    .disabled(selection.isEmpty)
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.capsule)
+            .padding(8)
+            .glassEffect(.regular, in: .capsule)
+        }
+        .animation(Motion.quick, value: selection.count)
+    }
+
+    private func moveSelection(to goalID: Goal.ID?) {
+        for recording in selectedRecordings {
+            move(recording, to: goalID)
+        }
+    }
+
+    private func mergeCandidates(for recording: Recording) -> [Recording] {
+        library.recordings
+            .filter { $0.id != recording.id && $0.stage != .recording && !enhancer.isWorking(on: $0) }
+            .filter { abs($0.createdAt.timeIntervalSince(recording.createdAt)) < 3 * 86_400 }
+            .sorted { abs($0.createdAt.timeIntervalSince(recording.createdAt)) < abs($1.createdAt.timeIntervalSince(recording.createdAt)) }
+            .prefix(8)
+            .map { $0 }
+    }
+
+    private func merge(_ recordings: [Recording]) {
+        Task {
+            do {
+                let merged = try await RecordingMerger.merge(recordings, in: library)
+                if merged.notes == nil {
+                    enhancer.enhance(merged, for: persona)
+                }
+            } catch {
+                mergeError = error.localizedDescription
+            }
+        }
     }
 
     private func move(_ recording: Recording, to goalID: Goal.ID?) {
@@ -245,6 +401,7 @@ private struct LiveCard: View {
     let since: Date
     let levels: [Float]
     let text: String
+    let stop: () -> Void
     @State private var pulses = false
 
     var body: some View {
@@ -265,6 +422,14 @@ private struct LiveCard: View {
                         .foregroundStyle(Palette.inkSecondary)
                         .contentTransition(.numericText())
                 }
+                Button(action: stop) {
+                    Label("Stop", systemImage: "stop.fill")
+                        .font(.rounded(13, weight: .semibold))
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .tint(Palette.record)
+                .help("Stop and save the recording")
             }
             Waveform(levels: Array(levels.suffix(64)))
                 .frame(height: 34)
@@ -286,6 +451,7 @@ private struct LiveCard: View {
 private struct RecordingRow<Actions: View>: View {
     let recording: Recording
     let persona: Persona
+    var isSelected: Bool?
     let open: () -> Void
     @ViewBuilder let actions: () -> Actions
     @Environment(Library.self) private var library
@@ -299,6 +465,14 @@ private struct RecordingRow<Actions: View>: View {
     var body: some View {
         Button(action: open) {
             HStack(alignment: .top, spacing: 14) {
+                if let isSelected {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(Palette.inkTertiary))
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(height: 44)
+                        .transition(.scale.combined(with: .opacity))
+                }
                 Image(systemName: recording.title.hasPrefix("Meeting") ? "person.2.wave.2.fill" : "waveform")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
@@ -326,7 +500,7 @@ private struct RecordingRow<Actions: View>: View {
                         .buttonStyle(.plain)
                         .menuIndicator(.hidden)
                         .fixedSize()
-                        .opacity(isHovering ? 1 : 0)
+                        .opacity(isHovering && isSelected == nil ? 1 : 0)
                         .help("More")
                     }
                     Text(metadata)
@@ -349,6 +523,11 @@ private struct RecordingRow<Actions: View>: View {
             }
             .padding(14)
             .background(.white.opacity(isHovering ? 0.92 : 0.7), in: .rect(cornerRadius: 20))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(tint, lineWidth: 2)
+                    .opacity(isSelected == true ? 1 : 0)
+            }
             .shadow(color: .black.opacity(isHovering ? 0.06 : 0), radius: 12, y: 6)
             .contentShape(.rect(cornerRadius: 20))
         }
@@ -386,10 +565,10 @@ private struct RecordingRow<Actions: View>: View {
     private var highlight: String? {
         guard let notes = recording.notes else { return nil }
         if let cards = notes.sections.first(where: { $0.style == .flashcards })?.items.count, cards > 0 {
-            return "\(cards) flashcards"
+            return "\(cards) flashcard\(cards == 1 ? "" : "s")"
         }
         if let actions = notes.sections.first(where: { $0.style == .checklist })?.items.count, actions > 0 {
-            return "\(actions) action items"
+            return "\(actions) action item\(actions == 1 ? "" : "s")"
         }
         return "Notes ready"
     }

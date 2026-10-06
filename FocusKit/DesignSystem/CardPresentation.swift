@@ -11,11 +11,13 @@ struct CloseCardAction: Sendable {
 
 enum Modal: Identifiable {
     case goal(Goal)
+    case subject(Goal.ID)
     case recording(Recording)
 
     var id: String {
         switch self {
         case .goal(let goal): "goal-\(goal.id)"
+        case .subject(let id): "subject-\(id)"
         case .recording(let recording): "recording-\(recording.id)"
         }
     }

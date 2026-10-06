@@ -31,17 +31,21 @@ Lecture and Meeting sessions record and transcribe live on device with `SpeechAn
 
 ## Installing
 
-FocusKit is distributed as a disk image outside the Mac App Store and is not notarized by Apple.
-
-1. Download `FocusKit.dmg` from the [releases page](../../releases) and drag FocusKit into Applications.
-2. Open it once. macOS will say it cannot verify the developer.
-3. Open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
-
-Prefer the terminal? This removes the quarantine flag instead:
+The quickest way is one line in Terminal. It downloads the latest release, installs it in Applications and opens it, with no Gatekeeper prompt:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/FocusKit.app
+curl -fsSL https://raw.githubusercontent.com/Darkyyto/studykit/main/Scripts/install.sh | sh
 ```
+
+Run the same line again to update. Your sessions, lectures and notes are kept.
+
+Prefer the disk image? FocusKit is not notarized by Apple, so macOS asks once:
+
+1. Download `FocusKit.dmg` from the [releases page](../../releases) and drag FocusKit into Applications.
+2. Open it. macOS will say it cannot verify the developer.
+3. Open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**.
+
+Updates are offered inside the app as well, under Settings › Updates.
 
 ## Building
 
