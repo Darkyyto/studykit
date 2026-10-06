@@ -21,6 +21,8 @@ final class VoiceRecorder {
     private(set) var levels = [Float](repeating: 0, count: levelHistory)
     private(set) var errorMessage: String?
     private(set) var transcriptionLocale: Locale?
+    private(set) var ownedBySession = false
+    private(set) var recordedThisSession = false
 
     @ObservationIgnored private let library: Library
     @ObservationIgnored private var capture: AudioCapture?
@@ -143,6 +145,28 @@ final class VoiceRecorder {
         var draft = makeRecording(fileName: fileName, since: since)
         draft.stage = .recording
         library.save(draft)
+    }
+
+    func startForSession(locale: Locale, goalID: Goal.ID?, vocabulary: [String], noun: String) async {
+        guard state == .idle, !ownedBySession else { return }
+        ownedBySession = true
+        recordedThisSession = false
+        await start(locale: locale, goalID: goalID, vocabulary: vocabulary, noun: noun)
+        if isActive {
+            recordedThisSession = true
+        } else {
+            ownedBySession = false
+        }
+    }
+
+    func finishSession(engine: FocusEngine, enhancer: NoteEnhancer, persona: Persona) {
+        guard ownedBySession else { return }
+        ownedBySession = false
+        Task {
+            guard let recording = await stop() else { return }
+            engine.attachRecording(recording.id)
+            enhancer.enhance(recording, for: persona)
+        }
     }
 
     func dismissError() {

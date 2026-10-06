@@ -12,8 +12,6 @@ struct SessionView: View {
     @State private var showsCompanion = false
     @State private var showsReader = true
     @State private var companion = Companion.notes
-    @State private var ownsRecording = false
-    @State private var hasRecording = false
     @State private var confirmsEnd = false
     @State private var showsCompletion = false
     @Namespace private var controls
@@ -98,7 +96,6 @@ struct SessionView: View {
                 .hidden()
             }
             .onAppear { prepare(plan) }
-            .onDisappear { finishRecording() }
             .onChange(of: engine.phase.isComplete) { _, isComplete in
                 guard isComplete else { return }
                 showsCompletion = true
@@ -116,34 +113,21 @@ struct SessionView: View {
     }
 
     private func recordingStopper(for plan: FocusPlan) -> (() -> Void)? {
-        guard plan.kind.recordsAudio, hasRecording else { return nil }
-        return { finishRecording() }
-    }
-
-    private func finishRecording() {
-        guard ownsRecording else { return }
-        ownsRecording = false
-        let persona = persona
-        Task {
-            guard let recording = await recorder.stop() else { return }
-            engine.attachRecording(recording.id)
-            enhancer.enhance(recording, for: persona)
-        }
+        guard plan.kind.recordsAudio, recorder.recordedThisSession else { return nil }
+        return { recorder.finishSession(engine: engine, enhancer: enhancer, persona: persona) }
     }
 
     private func prepare(_ plan: FocusPlan) {
         companion = CompanionPanel.tabs(for: plan.kind).first ?? .notes
         showsCompanion = plan.kind.recordsAudio
-        if plan.kind.recordsAudio, !recorder.isActive, engine.isActive {
-            ownsRecording = true
+        if plan.kind.recordsAudio, !recorder.isActive, !recorder.ownedBySession, engine.isActive {
             Task {
-                await recorder.start(
+                await recorder.startForSession(
                     locale: .speech(localeIdentifier),
                     goalID: plan.goalID,
                     vocabulary: library.activeGoals.map(\.title),
                     noun: plan.kind == .lecture ? "Lecture" : "Meeting"
                 )
-                hasRecording = recorder.isActive
             }
         }
         showsCompletion = engine.phase.isComplete

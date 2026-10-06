@@ -42,6 +42,9 @@ struct RootView: View {
     @State private var revealsChrome = false
     @Environment(Library.self) private var library
     @Environment(Updater.self) private var updater
+    @Environment(VoiceRecorder.self) private var recorder
+    @Environment(NoteEnhancer.self) private var enhancer
+    @AppStorage(Preference.persona) private var persona = Persona.personal
 
     private var isImmersive: Bool {
         section == .focus && (engine.isActive || engine.phase.isComplete)
@@ -67,6 +70,16 @@ struct RootView: View {
             }
         }
         .animation(Motion.morph, value: hasOnboarded)
+        .onAppear {
+            if engine.plan == nil {
+                recorder.finishSession(engine: engine, enhancer: enhancer, persona: persona)
+            }
+        }
+        .onChange(of: engine.plan == nil) { _, ended in
+            if ended {
+                recorder.finishSession(engine: engine, enhancer: enhancer, persona: persona)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openDocuments)) { notification in
             let urls = notification.userInfo?["urls"] as? [URL] ?? []
             guard let document = urls.lazy.compactMap({ PDFImport.open($0, into: library) }).first else { return }
