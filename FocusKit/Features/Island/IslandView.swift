@@ -25,7 +25,7 @@ struct IslandView: View {
     var body: some View {
         let size = controller.size
         let radius = controller.bottomRadius
-        let fillet = IslandController.fillet
+        let fillet = controller.fillet
         ZStack(alignment: .top) {
             Color.clear
             TopNotch(fillet: fillet, radius: radius)

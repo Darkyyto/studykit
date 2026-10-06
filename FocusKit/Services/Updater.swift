@@ -52,7 +52,15 @@ final class Updater {
         Self.repository.contains("/") && !Self.repository.hasPrefix("you/")
     }
 
+    static let failureMarker = URL.cachesDirectory.appending(path: "FocusKitUpdateFailed")
+
+    private(set) var wasBlocked = false
+
     func checkOnLaunch() {
+        if FileManager.default.fileExists(atPath: Self.failureMarker.path(percentEncoded: false)) {
+            try? FileManager.default.removeItem(at: Self.failureMarker)
+            wasBlocked = true
+        }
         guard checksAutomatically, isConfigured else { return }
         let last = UserDefaults.standard.object(forKey: Self.lastCheckKey) as? Date ?? .distantPast
         guard Date.now.timeIntervalSince(last) > 60 else { return }
@@ -116,21 +124,28 @@ final class Updater {
             destination = URL(fileURLWithPath: "/Applications/FocusKit.app")
         }
         let script = """
+        [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] && [ -n "$4" ] && [ -n "$5" ] || exit 1
         while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
-        rm -rf "$3.previous"
-        if mv "$3" "$3.previous" && ditto "$2" "$3"; then
-          rm -rf "$3.previous"
+        rm -rf "$3.updating" "$3.previous"
+        if ditto "$2" "$3.updating" && mv "$3" "$3.previous"; then
+          if mv "$3.updating" "$3"; then
+            rm -rf "$3.previous"
+            xattr -dr com.apple.quarantine "$3" 2>/dev/null
+          else
+            mv "$3.previous" "$3"
+            touch "$5"
+          fi
         else
-          rm -rf "$3"
-          mv "$3.previous" "$3"
+          rm -rf "$3.updating"
+          touch "$5"
         fi
-        xattr -dr com.apple.quarantine "$3" 2>/dev/null
         open "$3"
         rm -rf "$4"
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), url.path(percentEncoded: false), destination.path(percentEncoded: false), url.deletingLastPathComponent().path(percentEncoded: false)]
+        try? FileManager.default.removeItem(at: Self.failureMarker)
+        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), url.path(percentEncoded: false), destination.path(percentEncoded: false), url.deletingLastPathComponent().path(percentEncoded: false), Self.failureMarker.path(percentEncoded: false)]
         do {
             try process.run()
             NSApp.terminate(nil)

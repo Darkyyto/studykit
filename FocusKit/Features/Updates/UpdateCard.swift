@@ -48,8 +48,29 @@ struct UpdateCard: View {
         }
     }
 
+    private var blockedNotice: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("macOS stopped the last update", systemImage: "hand.raised.fill")
+                .font(.rounded(13, weight: .bold))
+                .foregroundStyle(Palette.rest.deep)
+            Text("Allow FocusKit under App Management in Privacy & Security, then press Update again. You only do this once.")
+                .font(.rounded(12, weight: .medium))
+                .foregroundStyle(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open App Management") { Privacy.open("Privacy_AppBundles") }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.rest.light.opacity(0.6), in: .rect(cornerRadius: 16))
+    }
+
     private var offer: some View {
         VStack(spacing: 20) {
+            if updater.wasBlocked {
+                blockedNotice
+            }
             if !release.notes.isEmpty {
                 ScrollView {
                     Text(LocalizedStringKey(release.notes))

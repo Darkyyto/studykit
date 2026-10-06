@@ -59,7 +59,9 @@ final class IslandController {
     static let canvas = CGSize(width: 760, height: 340)
     static let expandedSize = CGSize(width: 500, height: 168)
     static let wing: CGFloat = 54
-    static let fillet: CGFloat = 8
+    var fillet: CGFloat {
+        max(4, (notch.height * 0.2).rounded())
+    }
 
     let calendar = CalendarStore()
 
@@ -113,10 +115,10 @@ final class IslandController {
     }
 
     var size: CGSize {
-        let base = CGSize(width: max(notch.width, 180), height: notch.height)
+        let base = CGSize(width: hasHardwareNotch ? notch.width : 180, height: notch.height)
         switch shape {
         case .hidden: return base
-        case .compact: return CGSize(width: base.width + Self.wing * 2, height: base.height)
+        case .compact: return hasActivity ? CGSize(width: base.width + Self.wing * 2, height: base.height) : base
         case .peek: return CGSize(width: base.width + 140, height: base.height + 34)
         case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height)
         }
@@ -124,14 +126,15 @@ final class IslandController {
 
     var bottomRadius: CGFloat {
         switch shape {
-        case .hidden, .compact: min(12, notch.height / 2)
+        case .hidden, .compact: (notch.height * 0.3).rounded()
         case .peek: 18
         case .expanded: 24
         }
     }
 
     var isVisible: Bool {
-        shape != .hidden || hasHardwareNotch
+        if !hasHardwareNotch, shape == .compact, !hasActivity { return false }
+        return shape != .hidden || hasHardwareNotch
     }
 
     private var presence: Presence {

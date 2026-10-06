@@ -25,7 +25,18 @@ xcodebuild \
   build
 
 xattr -cr "$APP"
-codesign --force --deep --options runtime --sign - \
+IDENTITY="-"
+KEYCHAIN_ARGS=()
+if [[ -n "${SIGNING_KEYCHAIN:-}" ]]; then
+  IDENTITY="FocusKit Signing"
+  KEYCHAIN_ARGS=(--keychain "$SIGNING_KEYCHAIN")
+elif [[ -f "$ROOT/signing/build.keychain-db" && -f "$ROOT/signing/p12-password.txt" ]]; then
+  security unlock-keychain -p "$(cat "$ROOT/signing/p12-password.txt")" "$ROOT/signing/build.keychain-db"
+  IDENTITY="FocusKit Signing"
+  KEYCHAIN_ARGS=(--keychain "$ROOT/signing/build.keychain-db")
+fi
+
+codesign --force --deep --options runtime "${KEYCHAIN_ARGS[@]}" --sign "$IDENTITY" \
   --entitlements "$ROOT/FocusKit/Resources/FocusKit.entitlements" "$APP"
 codesign --verify --strict "$APP"
 

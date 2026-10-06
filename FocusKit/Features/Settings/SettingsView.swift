@@ -547,6 +547,11 @@ private struct PrivacyPane: View {
                 permission("Microphone", granted: microphone == .granted, pane: "Privacy_Microphone")
                 permission("Notifications", granted: notifications == .authorized || notifications == .provisional, pane: "Notifications")
                 permission("Calendar", granted: calendar == .fullAccess, pane: "Privacy_Calendars")
+                SettingsRow(title: "App updates", detail: "Lets FocusKit replace itself when you install an update.") {
+                    Button("Open Settings") { Privacy.open("Privacy_AppBundles") }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.capsule)
+                }
                 SettingsRow(title: "Music control", detail: "Spotify and Music, from the notch.", showsDivider: false) {
                     Button("Open Settings") { Privacy.open("Privacy_Automation") }
                         .buttonStyle(.glass)
