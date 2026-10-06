@@ -38,6 +38,7 @@ struct RootView: View {
     @State private var modal: Modal?
     @State private var isOnScreen = true
     @State private var hidesUpdateBanner = false
+    @State private var launching = true
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
     @Environment(FocusEngine.self) private var engine
     @AppStorage(Preference.hasOnboarded) private var hasOnboarded = false
@@ -76,6 +77,16 @@ struct RootView: View {
             }
         }
         .animation(Motion.morph, value: hasOnboarded)
+        .opacity(launching && hasOnboarded ? 0 : 1)
+        .scaleEffect(launching && hasOnboarded ? 0.985 : 1)
+        .overlay {
+            if launching && hasOnboarded {
+                LaunchView {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 1)) { launching = false }
+                }
+                .transition(.opacity)
+            }
+        }
         .onAppear {
             if !sessionIsOpen {
                 recorder.finishSession(engine: engine, enhancer: enhancer, persona: persona)

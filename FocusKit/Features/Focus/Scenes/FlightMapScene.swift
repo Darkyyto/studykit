@@ -85,7 +85,7 @@ struct FlightMapScene: View {
         }
         .onAppear(perform: introduce)
         .background {
-            TimelineView(.animation(minimumInterval: appearsActive ? 1.0 / 30 : 1.0 / 6, paused: !follows || isPaused || isArrived || !isOnScreen)) { context in
+            TimelineView(.animation(minimumInterval: FrameRate.interval(active: appearsActive), paused: !follows || isPaused || isArrived || !isOnScreen)) { context in
                 Color.clear
                     .onChange(of: context.date) { _, date in
                         guard follows, !isArrived else { return }

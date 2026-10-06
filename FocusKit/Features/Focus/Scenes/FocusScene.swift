@@ -6,7 +6,7 @@ extension EnvironmentValues {
 
 enum FrameRate {
     static func interval(active: Bool) -> Double {
-        active ? 1.0 / 30 : 1.0 / 8
+        active ? 1.0 / 60 : 1.0 / 8
     }
 }
 

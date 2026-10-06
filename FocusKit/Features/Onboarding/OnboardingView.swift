@@ -453,7 +453,7 @@ private struct OrbitingModes: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reduceMotion)) { context in
             let angle = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate * 0.25
             ZStack {
                 Circle()
