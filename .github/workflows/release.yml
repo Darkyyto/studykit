@@ -40,6 +40,8 @@ jobs:
           security unlock-keychain -p "$SIGNING_PASSWORD" "$KEYCHAIN"
           security import "$RUNNER_TEMP/signing.p12" -k "$KEYCHAIN" -P "$SIGNING_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$SIGNING_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security find-identity -p codesigning "$KEYCHAIN"
           rm "$RUNNER_TEMP/signing.p12"
           echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
       - name: Build disk image
