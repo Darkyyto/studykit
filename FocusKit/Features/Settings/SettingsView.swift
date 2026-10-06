@@ -488,6 +488,10 @@ private struct UpdatesPane: View {
                         ProgressView(value: fraction)
                             .progressViewStyle(.linear)
                             .frame(width: 140)
+                    } else if updater.needsAppManagement {
+                        Button("Open App Management") { Privacy.open("Privacy_AppBundles") }
+                            .buttonStyle(.glassProminent)
+                            .buttonBorderShape(.capsule)
                     } else if case .ready(let url) = updater.state {
                         Button(url.pathExtension == "app" ? "Restart and Update" : "Install and Quit") { updater.openInstaller(url) }
                             .buttonStyle(.glassProminent)
@@ -529,6 +533,7 @@ private struct UpdatesPane: View {
         case .upToDate: "You have the latest version."
         case .available(let release): "Version \(release.version) is available."
         case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
+        case .ready(let url) where updater.needsAppManagement: url.pathExtension == "app" ? "Turn on FocusKit under App Management, then come back." : "Downloaded."
         case .ready(let url): url.pathExtension == "app" ? "Ready. FocusKit restarts with the new version." : "Downloaded. FocusKit quits, then drag it onto Applications and choose Replace."
         case .failed(let message): message
         case .idle: "Free for personal use."

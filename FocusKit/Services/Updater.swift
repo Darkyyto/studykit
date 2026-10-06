@@ -55,15 +55,14 @@ final class Updater {
     static let failureMarker = URL.cachesDirectory.appending(path: "FocusKitUpdateFailed")
 
     private(set) var wasBlocked = false
+    private(set) var needsAppManagement = false
 
     func checkOnLaunch() {
         if FileManager.default.fileExists(atPath: Self.failureMarker.path(percentEncoded: false)) {
             try? FileManager.default.removeItem(at: Self.failureMarker)
             wasBlocked = true
         }
-        guard checksAutomatically, isConfigured else { return }
-        let last = UserDefaults.standard.object(forKey: Self.lastCheckKey) as? Date ?? .distantPast
-        guard Date.now.timeIntervalSince(last) > 60 else { return }
+        guard (checksAutomatically || wasBlocked), isConfigured else { return }
         Task { await check(userInitiated: false) }
     }
 
@@ -101,8 +100,8 @@ final class Updater {
             let release = Release(version: version, notes: payload.body ?? "", diskImage: diskImage, page: page)
             state = .available(release)
             pending = release
-            if !userInitiated {
-                try? await Task.sleep(for: .seconds(1.2))
+            if !userInitiated || wasBlocked {
+                try? await Task.sleep(for: .seconds(wasBlocked ? 0.4 : 1.2))
                 presented = release
             }
         } catch {
@@ -110,7 +109,21 @@ final class Updater {
         }
     }
 
+    @discardableResult
+    func checkPermission() -> Bool {
+        let probe = Bundle.main.bundleURL.appending(path: "Contents/.update-check").path(percentEncoded: false)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "[ -n \"$1\" ] && touch \"$1\" && rm -f \"$1\"", "sh", probe]
+        let allowed = (try? process.run()).map { process.waitUntilExit(); return process.terminationStatus == 0 } ?? false
+        needsAppManagement = !allowed
+        return allowed
+    }
+
     func openInstaller(_ url: URL) {
+        if url.pathExtension == "app", !checkPermission() {
+            return
+        }
         guard url.pathExtension == "app" else {
             NSWorkspace.shared.open(url)
             Task {
@@ -119,39 +132,51 @@ final class Updater {
             }
             return
         }
-        var destination = Bundle.main.bundleURL
+        var destination = Bundle.main.bundleURL.standardizedFileURL
         if destination.path(percentEncoded: false).contains("/AppTranslocation/") {
             destination = URL(fileURLWithPath: "/Applications/FocusKit.app")
         }
         let script = """
         [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] && [ -n "$4" ] && [ -n "$5" ] || exit 1
+        STAGED="${2%/}"
+        APP="${3%/}"
+        WORK="${4%/}"
+        case "$APP" in */*.app) ;; *) exit 1 ;; esac
         while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
-        rm -rf "$3.updating" "$3.previous"
-        if ditto "$2" "$3.updating" && mv "$3" "$3.previous"; then
-          if mv "$3.updating" "$3"; then
-            rm -rf "$3.previous"
-            xattr -dr com.apple.quarantine "$3" 2>/dev/null
+        rm -rf "$APP.updating" "$APP.previous"
+        if ditto "$STAGED" "$APP.updating" && mv "$APP" "$APP.previous"; then
+          if mv "$APP.updating" "$APP"; then
+            rm -rf "$APP.previous"
+            xattr -dr com.apple.quarantine "$APP" 2>/dev/null
           else
-            mv "$3.previous" "$3"
+            mv "$APP.previous" "$APP"
             touch "$5"
           fi
         else
-          rm -rf "$3.updating"
+          rm -rf "$APP.updating"
           touch "$5"
         fi
-        open "$3"
-        rm -rf "$4"
+        open "$APP"
+        rm -rf "$WORK"
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         try? FileManager.default.removeItem(at: Self.failureMarker)
-        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), url.path(percentEncoded: false), destination.path(percentEncoded: false), url.deletingLastPathComponent().path(percentEncoded: false), Self.failureMarker.path(percentEncoded: false)]
+        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(url.deletingLastPathComponent()), Self.plainPath(Self.failureMarker)]
         do {
             try process.run()
             NSApp.terminate(nil)
         } catch {
             state = .failed("FocusKit could not install the update by itself. Download it from the release page.")
         }
+    }
+
+    nonisolated private static func plainPath(_ url: URL) -> String {
+        var path = url.path(percentEncoded: false)
+        while path.count > 1, path.hasSuffix("/") {
+            path.removeLast()
+        }
+        return path
     }
 
     nonisolated private static func stage(_ diskImage: URL, in work: URL) async throws -> URL {
@@ -221,6 +246,7 @@ final class Updater {
                     state = .ready(destination)
                 } else {
                     state = .ready(try await Self.stage(destination, in: work))
+                    checkPermission()
                 }
                 presented = release
             } catch {

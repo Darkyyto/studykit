@@ -140,7 +140,58 @@ struct UpdateCard: View {
         .transition(.blurReplace)
     }
 
+    private var permissionRequest: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("One last permission", systemImage: "lock.open.fill")
+                .font(.rounded(14, weight: .bold))
+                .foregroundStyle(Palette.ink)
+            VStack(alignment: .leading, spacing: 10) {
+                step(1, "Open App Management in System Settings.")
+                step(2, "Turn on FocusKit in the list.")
+                step(3, "Come back here. FocusKit notices it by itself.")
+            }
+            Button("Open App Management") { Privacy.open("Privacy_AppBundles") }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.capsule)
+            Text("macOS asks this once, so FocusKit can replace itself when you update. It never touches other apps.")
+                .font(.rounded(11.5, weight: .medium))
+                .foregroundStyle(Palette.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Palette.rest.light.opacity(0.55), in: .rect(cornerRadius: 18))
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            updater.checkPermission()
+        }
+    }
+
     private func ready(_ url: URL) -> some View {
+        VStack(spacing: 20) {
+            if url.pathExtension == "app", updater.needsAppManagement {
+                permissionRequest
+                Button("I turned it on") {
+                    updater.checkPermission()
+                }
+                .buttonStyle(.glassProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.large)
+                .tint(tint)
+                command
+                Button("Not Now") { close() }
+                    .buttonStyle(.plain)
+                    .font(.rounded(13, weight: .semibold))
+                    .foregroundStyle(Palette.inkSecondary)
+                    .keyboardShortcut(.cancelAction)
+            } else {
+                readySteps(url)
+            }
+        }
+        .transition(.blurReplace)
+        .animation(Motion.standard, value: updater.needsAppManagement)
+    }
+
+    private func readySteps(_ url: URL) -> some View {
         VStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 14) {
                 if url.pathExtension == "app" {
