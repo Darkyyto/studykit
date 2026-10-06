@@ -94,7 +94,9 @@ final class CalendarStore {
         let weekday = calendar.component(.weekday, from: interval.start)
         let leading = (weekday - calendar.firstWeekday + 7) % 7
         guard let first = calendar.date(byAdding: .day, value: -leading, to: interval.start) else { return [] }
-        return (0..<42).compactMap { calendar.date(byAdding: .day, value: $0, to: first) }
+        let length = calendar.range(of: .day, in: .month, for: month)?.count ?? 30
+        let count = Int((Double(leading + length) / 7).rounded(.up)) * 7
+        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: first) }
     }
 
     var weekdaySymbols: [String] {

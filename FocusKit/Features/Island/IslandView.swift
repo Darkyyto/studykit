@@ -13,9 +13,6 @@ struct IslandView: View {
     @AppStorage(Preference.persona) private var persona = Persona.personal
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
     @AppStorage(Preference.name) private var name = ""
-    @AppStorage(Preference.homeAirport) private var homeCode = Airport.fallback.code
-    @AppStorage("rounds") private var rounds = 1
-    @AppStorage("breakMinutes") private var breakMinutes = 5
     @Namespace private var tabs
 
     private var soundscapeKind: Soundscape.Kind? {
@@ -760,7 +757,8 @@ struct IslandView: View {
     private var calendarTab: some View {
         HStack(alignment: .top, spacing: 10) {
             MonthGrid(calendar: calendar)
-                .padding(10)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
                 .frame(width: 244)
                 .frame(maxHeight: .infinity, alignment: .top)
                 .notchCard()
@@ -926,20 +924,7 @@ struct IslandView: View {
     }
 
     private func start(_ item: FocusMode) {
-        mode = item
-        let minutes = UserDefaults.standard.integer(forKey: Preference.minutes(for: item))
-        let duration = TimeInterval((minutes > 0 ? minutes : item.suggestedMinutes) * 60)
-        let origin = Airport.named(homeCode) ?? .fallback
-        let destination = origin.routes(closestTo: duration)[0]
-        engine.start(FocusPlan(
-            mode: item,
-            intention: "",
-            goalID: nil,
-            focusDuration: duration,
-            rounds: rounds,
-            breakDuration: rounds > 1 ? TimeInterval(breakMinutes * 60) : 0,
-            route: item == .flight ? Session.Route(origin: origin.code, destination: destination.code) : nil
-        ))
+        engine.startQuick(item)
     }
 }
 
@@ -989,62 +974,58 @@ private struct MonthGrid: View {
 
     var body: some View {
         let system = Calendar.current
-        VStack(spacing: 2) {
-            HStack {
-                Text(calendar.month.formatted(.dateTime.month(.wide)))
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Text(calendar.month.formatted(.dateTime.month(.wide)).capitalized)
                     .font(.rounded(13, weight: .bold))
                     .foregroundStyle(.white)
-                + Text(" " + calendar.month.formatted(.dateTime.year()))
-                    .font(.rounded(11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.45))
+                Text(calendar.month.formatted(.dateTime.year()))
+                    .font(.rounded(13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
                 Spacer()
                 chevron("chevron.left") { calendar.showMonth(offset: -1) }
                 chevron("chevron.right") { calendar.showMonth(offset: 1) }
             }
+            .padding(.leading, 4)
             .padding(.bottom, 2)
             HStack(spacing: 0) {
                 ForEach(Array(calendar.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
-                    Text(symbol)
-                        .font(.rounded(9, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.4))
+                    Text(symbol.uppercased())
+                        .font(.rounded(9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.32))
                         .frame(maxWidth: .infinity)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
                 ForEach(calendar.days, id: \.self) { day in
-                    DayCell(
-                        day: system.component(.day, from: day),
-                        colors: inMonthColors(for: day, system: system),
-                        inMonth: system.isDate(day, equalTo: calendar.month, toGranularity: .month),
-                        isToday: system.isDateInToday(day),
-                        isSelected: system.isDate(day, inSameDayAs: calendar.selected),
-                        isWeekend: system.isDateInWeekend(day)
-                    ) {
-                        calendar.select(day)
+                    if system.isDate(day, equalTo: calendar.month, toGranularity: .month) {
+                        DayCell(
+                            day: system.component(.day, from: day),
+                            color: calendar.events(on: day).first?.color,
+                            isToday: system.isDateInToday(day),
+                            isSelected: system.isDate(day, inSameDayAs: calendar.selected),
+                            isWeekend: system.isDateInWeekend(day)
+                        ) {
+                            calendar.select(day)
+                        }
+                    } else {
+                        Color.clear
+                            .frame(height: 26)
                     }
                 }
             }
+            .id(calendar.month)
+            .transition(.opacity)
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.9), value: calendar.month)
-    }
-
-    private func inMonthColors(for day: Date, system: Calendar) -> [Color] {
-        guard system.isDate(day, equalTo: calendar.month, toGranularity: .month) else { return [] }
-        var colors: [Color] = []
-        for event in calendar.events(on: day) where !colors.contains(event.color) {
-            colors.append(event.color)
-            if colors.count == 3 { break }
-        }
-        return colors
     }
 
     private func chevron(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(width: 20, height: 20)
-                .background(.white.opacity(0.08), in: .circle)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 22, height: 22)
                 .contentShape(.circle)
         }
         .buttonStyle(.pressable)
@@ -1053,62 +1034,45 @@ private struct MonthGrid: View {
 
 private struct DayCell: View {
     let day: Int
-    let colors: [Color]
-    let inMonth: Bool
+    let color: Color?
     let isToday: Bool
     let isSelected: Bool
     let isWeekend: Bool
     let select: () -> Void
     @State private var isHovering = false
 
-    private var numberColor: Color {
-        if isToday { return .white }
-        if !inMonth { return .white.opacity(0.2) }
-        return .white.opacity(isWeekend ? 0.6 : 0.92)
-    }
-
     var body: some View {
         Button(action: select) {
-            VStack(spacing: 2) {
+            VStack(spacing: 1) {
                 Text("\(day)")
-                    .font(.rounded(11, weight: isToday || isSelected ? .bold : .medium))
+                    .font(.rounded(11.5, weight: isToday ? .bold : .medium))
                     .monospacedDigit()
-                    .foregroundStyle(numberColor)
-                HStack(spacing: 2) {
-                    ForEach(Array(colors.enumerated()), id: \.offset) { _, color in
+                    .foregroundStyle(isToday ? .white : .white.opacity(isWeekend ? 0.5 : 0.88))
+                    .frame(width: 21, height: 21)
+                    .background {
                         Circle()
-                            .fill(isToday ? .white : color)
-                            .frame(width: 3.5, height: 3.5)
+                            .fill(isToday ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.white.opacity(isSelected ? 0.16 : isHovering ? 0.08 : 0)))
                     }
-                }
-                .frame(height: 4)
+                    .overlay {
+                        if isSelected, isToday {
+                            Circle()
+                                .strokeBorder(.white.opacity(0.85), lineWidth: 1.5)
+                                .padding(-2.5)
+                        }
+                    }
+                Circle()
+                    .fill(color ?? .clear)
+                    .frame(width: 3.5, height: 3.5)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 22)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(background)
-            }
-            .overlay {
-                if isSelected, !isToday {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(.white.opacity(0.22), lineWidth: 1)
-                }
-            }
-            .contentShape(.rect(cornerRadius: 7))
+            .frame(height: 26)
+            .contentShape(.rect)
         }
         .buttonStyle(.pressable)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 1), value: isSelected)
-    }
-
-    private var background: AnyShapeStyle {
-        if isToday { return AnyShapeStyle(Color.accentColor.gradient) }
-        if isSelected { return AnyShapeStyle(.white.opacity(0.14)) }
-        if isHovering, inMonth { return AnyShapeStyle(.white.opacity(0.07)) }
-        return AnyShapeStyle(.clear)
+        .animation(.spring(response: 0.28, dampingFraction: 1), value: isSelected)
     }
 }
 
@@ -1220,44 +1184,6 @@ private struct WeekBars: View {
         }
         .frame(maxHeight: .infinity, alignment: .bottom)
         .help("Last 7 days")
-    }
-}
-
-private struct ModeLauncher: View {
-    let mode: FocusMode
-    let isCurrent: Bool
-    let start: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: start) {
-            VStack(spacing: 5) {
-                Image(systemName: mode.symbol)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background {
-                        Circle()
-                            .fill(LinearGradient(colors: [mode.palette.mid, mode.palette.deep], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    }
-                    .overlay {
-                        Circle()
-                            .strokeBorder(.white.opacity(isCurrent ? 0.7 : 0.15), lineWidth: isCurrent ? 1.5 : 0.5)
-                    }
-                    .shadow(color: mode.palette.deep.opacity(isHovering ? 0.7 : 0.35), radius: isHovering ? 10 : 5, y: 2)
-                    .scaleEffect(isHovering ? 1.08 : 1)
-                Text(mode.title)
-                    .font(.rounded(10, weight: .semibold))
-                    .foregroundStyle(.white.opacity(isCurrent || isHovering ? 0.95 : 0.55))
-            }
-            .frame(maxWidth: .infinity)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.pressable)
-        .onHover { hovering in
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) { isHovering = hovering }
-        }
-        .help("Start \(mode.title)")
     }
 }
 

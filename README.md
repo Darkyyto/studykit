@@ -68,7 +68,7 @@ At rest the notch matches your Mac's own, so nothing shows until something happe
 
 ## Menu bar
 
-FocusKit keeps a small icon in the menu bar, with the time left while a session runs. Click it to pause, skip or end the session, start a mode, or open FocusKit, Settings, check for updates, restart or quit.
+FocusKit keeps a small icon in the menu bar, with the time left while a session runs. Click it to see today, this week and your streak, start any mode with one tap, pause or skip the session, stop a recording, or open FocusKit, Settings, check for updates, restart or quit.
 
 Closing the window does not quit the app. FocusKit leaves the Dock and keeps running in the menu bar and the notch, ready for the next session. Turn this off in **Settings › Focus**.
 
