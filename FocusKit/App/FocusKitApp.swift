@@ -78,6 +78,7 @@ struct FocusKitApp: App {
             SettingsView()
                 .environment(soundscape)
                 .environment(updater)
+                .environment(island.systemHUD)
         }
         .windowResizability(.contentSize)
     }

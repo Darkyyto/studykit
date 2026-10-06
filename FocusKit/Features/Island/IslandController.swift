@@ -25,6 +25,7 @@ final class IslandController {
         case hidden
         case compact
         case peek
+        case hud
         case expanded
     }
 
@@ -54,6 +55,7 @@ final class IslandController {
     @ObservationIgnored private var outsideSince: Date?
     @ObservationIgnored private var hoverIntent: Task<Void, Never>?
     @ObservationIgnored private var announcementTask: Task<Void, Never>?
+    @ObservationIgnored private var hudTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
@@ -65,13 +67,15 @@ final class IslandController {
     }
 
     let calendar = CalendarStore()
+    let systemHUD = SystemHUD()
+    static let hudWing: CGFloat = 136
 
     init(engine: FocusEngine, recorder: VoiceRecorder, library: Library, nowPlaying: NowPlaying, soundscape: Soundscape, enhancer: NoteEnhancer) {
         self.engine = engine
         self.recorder = recorder
         self.nowPlaying = nowPlaying
 
-        let content = IslandView(controller: self, calendar: calendar)
+        let content = IslandView(controller: self, calendar: calendar, systemHUD: systemHUD)
             .environment(engine)
             .environment(recorder)
             .environment(library)
@@ -121,6 +125,7 @@ final class IslandController {
         case .hidden: return base
         case .compact: return hasActivity ? CGSize(width: base.width + Self.wing * 2, height: base.height) : base
         case .peek: return CGSize(width: base.width + 140, height: base.height + 34)
+        case .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
         case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height)
         }
     }
@@ -129,6 +134,7 @@ final class IslandController {
         switch shape {
         case .hidden, .compact: (notch.height * 0.3).rounded()
         case .peek: 18
+        case .hud: (notch.height * 0.36).rounded()
         case .expanded: 24
         }
     }
@@ -159,6 +165,19 @@ final class IslandController {
         transition(to: restingShape)
     }
 
+    func showSystemHUD() {
+        guard presence != .off, shape != .expanded else { return }
+        hudTask?.cancel()
+        if shape != .hud {
+            transition(to: .hud)
+        }
+        hudTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled, let self, self.shape == .hud else { return }
+            self.transition(to: self.restingShape)
+        }
+    }
+
     func announce(_ text: String, symbol: String, tint: Color) {
         guard presence != .off, !appIsInFront else { return }
         announcementTask?.cancel()
@@ -185,6 +204,7 @@ final class IslandController {
 
     private func install() {
         guard let panel else { return }
+        systemHUD.start()
         reposition()
         panel.ignoresMouseEvents = true
         panel.orderFrontRegardless()
@@ -246,7 +266,7 @@ final class IslandController {
 
     private func transition(to target: Shape) {
         guard target != shape else { return }
-        let opening = target == .expanded || target == .peek
+        let opening = target == .expanded || target == .peek || target == .hud
         withAnimation(opening ? .spring(response: 0.44, dampingFraction: 0.78) : .spring(response: 0.36, dampingFraction: 0.95)) {
             shape = target
         }

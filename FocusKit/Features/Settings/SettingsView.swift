@@ -316,6 +316,10 @@ private struct FocusPane: View {
 
 private struct NotchPane: View {
     @AppStorage(Preference.sideNotch) private var presence = IslandController.Presence.activity.rawValue
+    @AppStorage(SystemHUD.enabledKey) private var showsIndicators = true
+    @AppStorage(SystemHUD.replaceKey) private var replacesIndicators = false
+    @Environment(SystemHUD.self) private var systemHUD
+    @State private var hasAccessibility = SystemHUD.hasAccessibility
     @State private var calendarAccess = EKEventStore.authorizationStatus(for: .event)
 
     var body: some View {
@@ -356,6 +360,35 @@ private struct NotchPane: View {
                 }
             }
             Footnote(text: "Move the pointer to the top of the screen to open the notch: your session, music, and the day ahead.")
+            SettingsCard {
+                SettingsRow(title: "Volume, brightness and charging", detail: "Show them in the notch when they change.") {
+                    Toggle("", isOn: $showsIndicators)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .onChange(of: showsIndicators) { systemHUD.updateKeyTap() }
+                }
+                SettingsRow(title: "Replace the macOS indicators", detail: replacesIndicators && !hasAccessibility ? "Allow FocusKit under Accessibility so it can handle the volume and brightness keys." : "The keys go through FocusKit and only the notch appears.", showsDivider: replacesIndicators && !hasAccessibility) {
+                    Toggle("", isOn: $replacesIndicators)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .disabled(!showsIndicators)
+                        .onChange(of: replacesIndicators) { _, on in
+                            systemHUD.updateKeyTap(prompt: on)
+                            hasAccessibility = SystemHUD.hasAccessibility
+                        }
+                }
+                if replacesIndicators, !hasAccessibility {
+                    SettingsRow(title: "Accessibility", detail: "Turn on FocusKit in the list, then come back.", showsDivider: false) {
+                        Button("Open Settings") { Privacy.open("Privacy_Accessibility") }
+                            .buttonStyle(.glassProminent)
+                            .buttonBorderShape(.capsule)
+                    }
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                hasAccessibility = SystemHUD.hasAccessibility
+                systemHUD.updateKeyTap()
+            }
             SettingsCard {
                 SettingsRow(title: "Calendar", detail: calendarAccess == .fullAccess ? "Connected. Events from all your calendars appear in the notch." : "Show your classes and meetings in the notch.", showsDivider: false) {
                     switch calendarAccess {

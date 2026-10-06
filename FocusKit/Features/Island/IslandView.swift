@@ -3,6 +3,7 @@ import SwiftUI
 struct IslandView: View {
     let controller: IslandController
     let calendar: CalendarStore
+    let systemHUD: SystemHUD
     @Environment(FocusEngine.self) private var engine
     @Environment(VoiceRecorder.self) private var recorder
     @Environment(Library.self) private var library
@@ -58,6 +59,9 @@ struct IslandView: View {
         .onChange(of: nowPlaying.isPlaying) { _, _ in controller.refresh() }
         .onChange(of: soundscapeKind, initial: true) { _, kind in soundscape.sync(kind: kind) }
         .onChange(of: soundscape.isEnabled) { _, _ in soundscape.sync(kind: soundscapeKind) }
+        .onChange(of: systemHUD.event) { _, event in
+            if event != nil { controller.showSystemHUD() }
+        }
         .task(id: controller.tab) {
             if controller.tab == .calendar { await calendar.prepare() }
         }
@@ -81,6 +85,9 @@ struct IslandView: View {
         case .compact:
             compact
                 .transition(.blurReplace.animation(.easeOut(duration: 0.18)))
+        case .hud:
+            hud
+                .transition(.blurReplace.animation(.easeOut(duration: 0.16)))
         case .hidden:
             Color.clear
         }
@@ -294,6 +301,76 @@ struct IslandView: View {
         if engine.isResting { return "cup.and.saucer.fill" }
         if engine.phase.isComplete { return "checkmark" }
         return engine.plan?.mode.symbol ?? mode.symbol
+    }
+
+    @ViewBuilder
+    private var hud: some View {
+        if let event = systemHUD.event {
+            HStack(spacing: 0) {
+                HStack(spacing: 9) {
+                    Image(systemName: hudSymbol(event))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 22)
+                    Text(hudTitle(event))
+                        .font(.rounded(13.5, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: IslandController.hudWing, alignment: .leading)
+                .padding(.leading, 16)
+                Spacer(minLength: 0)
+                HStack(spacing: 10) {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.16))
+                            Capsule()
+                                .fill(LinearGradient(colors: hudColors(event), startPoint: .leading, endPoint: .trailing))
+                                .frame(width: max(6, proxy.size.width * event.value))
+                                .animation(.spring(response: 0.3, dampingFraction: 0.9), value: event.value)
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(Int((event.value * 100).rounded()))")
+                        .font(.numeric(13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText(value: event.value))
+                        .animation(Motion.quick, value: event.value)
+                        .frame(width: 28, alignment: .trailing)
+                }
+                .frame(width: IslandController.hudWing - 10)
+                .padding(.trailing, 16)
+            }
+            .frame(height: controller.notch.height)
+        }
+    }
+
+    private func hudSymbol(_ event: SystemHUD.Event) -> String {
+        switch event.kind {
+        case .volume:
+            if event.isMuted || event.value == 0 { return "speaker.slash.fill" }
+            return event.value < 0.34 ? "speaker.wave.1.fill" : event.value < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+        case .brightness:
+            return event.value < 0.5 ? "sun.min.fill" : "sun.max.fill"
+        case .battery:
+            return event.isCharging ? "battery.100percent.bolt" : "battery.75percent"
+        }
+    }
+
+    private func hudTitle(_ event: SystemHUD.Event) -> String {
+        switch event.kind {
+        case .volume: event.isMuted ? "Muted" : "Volume"
+        case .brightness: "Brightness"
+        case .battery: event.isCharging ? "Charging" : "On battery"
+        }
+    }
+
+    private func hudColors(_ event: SystemHUD.Event) -> [Color] {
+        switch event.kind {
+        case .volume: [Color(hex: 0x34C759), Color(hex: 0xB8E04A)]
+        case .brightness: [Color(hex: 0xFFC94A), Color(hex: 0xFFF2B0)]
+        case .battery: event.value < 0.2 ? [Color(hex: 0xFF5A4E), Color(hex: 0xFF8F70)] : [Color(hex: 0x34C759), Color(hex: 0x7BE495)]
+        }
     }
 
     private var compact: some View {
