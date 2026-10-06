@@ -93,6 +93,7 @@ struct IslandView: View {
             Group {
                 switch controller.tab {
                 case .home: home
+                case .music: musicTab
                 case .calendar: calendarTab
                 }
             }
@@ -113,6 +114,7 @@ struct IslandView: View {
         HStack(spacing: 0) {
             HStack(spacing: 4) {
                 tabButton(.home, symbol: "house.fill", help: "Home")
+                tabButton(.music, symbol: "music.note", help: "Music")
                 tabButton(.calendar, symbol: "calendar", help: "Calendar")
             }
             .padding(.leading, 14)
@@ -173,6 +175,111 @@ struct IslandView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(10)
             .background(.white.opacity(0.06), in: .rect(cornerRadius: 16))
+        }
+    }
+
+    @ViewBuilder
+    private var musicTab: some View {
+        if nowPlaying.hasTrack {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                HStack(spacing: 16) {
+                    Button {
+                        nowPlaying.open()
+                    } label: {
+                        Group {
+                            if let artwork = nowPlaying.artwork {
+                                Image(nsImage: artwork)
+                                    .resizable()
+                                    .interpolation(.high)
+                                    .aspectRatio(contentMode: .fill)
+                            } else {
+                                ZStack {
+                                    nowPlaying.accent.opacity(0.3)
+                                    Image(systemName: "music.note")
+                                        .font(.system(size: 30, weight: .semibold))
+                                        .foregroundStyle(nowPlaying.accent)
+                                }
+                            }
+                        }
+                        .frame(width: 112, height: 112)
+                        .clipShape(.rect(cornerRadius: 16))
+                        .shadow(color: nowPlaying.accent.opacity(0.45), radius: 16, y: 6)
+                        .scaleEffect(nowPlaying.isPlaying ? 1 : 0.92)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: nowPlaying.isPlaying)
+                    }
+                    .buttonStyle(.pressable)
+                    .help("Open \(nowPlaying.player?.scriptName ?? "player")")
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Equalizer(tint: nowPlaying.accent, isPlaying: nowPlaying.isPlaying)
+                                    .frame(width: 12, height: 11)
+                                Text(nowPlaying.player?.scriptName ?? "")
+                                    .font(.rounded(10.5, weight: .bold))
+                                    .foregroundStyle(nowPlaying.accent)
+                            }
+                            Text(nowPlaying.title)
+                                .font(.rounded(16, weight: .bold))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Text(nowPlaying.artist)
+                                .font(.rounded(12.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
+                        if nowPlaying.duration > 0 {
+                            VStack(spacing: 3) {
+                                ProgressLine(value: nowPlaying.elapsed(at: context.date) / nowPlaying.duration, tint: nowPlaying.accent)
+                                HStack {
+                                    Text(nowPlaying.elapsed(at: context.date).clock)
+                                    Spacer()
+                                    Text("-" + max(0, nowPlaying.duration - nowPlaying.elapsed(at: context.date)).clock)
+                                }
+                                .font(.numeric(10, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.45))
+                            }
+                        }
+                        HStack(spacing: 14) {
+                            iconButton("backward.fill", help: "Previous", size: 30) { nowPlaying.previous() }
+                            iconButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", help: nowPlaying.isPlaying ? "Pause" : "Play", size: 38, highlighted: true) {
+                                nowPlaying.togglePlayback()
+                            }
+                            iconButton("forward.fill", help: "Next", size: 30) { nowPlaying.next() }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 6)
+            }
+        } else {
+            VStack(spacing: 12) {
+                Image(systemName: "music.note.list")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text("Nothing is playing")
+                    .font(.rounded(14, weight: .bold))
+                    .foregroundStyle(.white)
+                HStack(spacing: 8) {
+                    ForEach([NowPlaying.Player.spotify, .music], id: \.self) { player in
+                        if NowPlaying.isInstalled(player) {
+                            Button {
+                                nowPlaying.play(in: player)
+                            } label: {
+                                Label("Play in \(player.scriptName)", systemImage: "play.fill")
+                                    .font(.rounded(12, weight: .semibold))
+                                    .foregroundStyle(.black)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 28)
+                                    .background(.white, in: .capsule)
+                                    .contentShape(.capsule)
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

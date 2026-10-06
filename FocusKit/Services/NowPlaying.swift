@@ -106,6 +106,23 @@ final class NowPlaying {
         command("previous track")
     }
 
+    static func isInstalled(_ player: Player) -> Bool {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) != nil
+    }
+
+    func play(in player: Player) {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
+        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1.5))
+                _ = Self.run("tell application \"\(player.scriptName)\" to play")
+                self.refreshIfNeeded()
+            }
+        }
+    }
+
     func open() {
         guard let player, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())

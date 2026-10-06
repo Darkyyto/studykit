@@ -30,6 +30,7 @@ final class IslandController {
 
     enum Tab: Hashable {
         case home
+        case music
         case calendar
     }
 
