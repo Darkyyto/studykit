@@ -56,11 +56,11 @@ Lecture and Meeting sessions record while you focus. The live transcript appears
 
 ## Notch
 
-On Macs with a notch, FocusKit lives in it. While a session runs or music plays, the time left and the song appear on either side of the camera. Move the pointer to the top of the screen and it opens:
+On Macs with a notch, FocusKit lives in it and grows out of it. While a session runs or music plays, the time left and the song appear on either side of the camera, and a new song, a break or a finished session slides in beside it without covering the screen. Move the pointer to the top of the screen and it opens:
 
-- **Home** – the current session with its controls, the song playing in Spotify or Music, or quick buttons to start a mode.
-- **Music** – the cover, the time left in the song and the controls, or a quick way to start Spotify or Music.
-- **Calendar** – the month and the day's events from your calendars.
+- **Home** – how long you have focused today, your streak and the last seven days, a tap to start any mode, and either the song playing or the time and your next event.
+- **Music** – the cover, the time left in the song and the controls over a backdrop taken from the artwork, or a quick way to start Spotify or Music.
+- **Calendar** – the month with a dot for each calendar, and the selected day's events on a timeline, with the one happening now highlighted.
 
 Volume, brightness and charging show up in the notch too, as a slim bar on either side of the camera. Turn on **Replace the macOS indicators** in Settings › Notch and FocusKit handles the volume and brightness keys itself, so only the notch appears. This needs the Accessibility permission, asked once.
 

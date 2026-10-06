@@ -36,7 +36,8 @@ final class IslandController {
     }
 
     struct Announcement: Equatable {
-        let text: String
+        let title: String
+        let detail: String
         let symbol: String
         let tint: Color
     }
@@ -60,10 +61,14 @@ final class IslandController {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     static let canvas = CGSize(width: 760, height: 340)
-    static let expandedSize = CGSize(width: 500, height: 168)
+    static let expandedSize = CGSize(width: 540, height: 178)
     static let wing: CGFloat = 54
     var fillet: CGFloat {
-        max(4, (notch.height * 0.2).rounded())
+        switch shape {
+        case .hidden: max(4, (notch.height * 0.2).rounded())
+        case .compact, .hud, .peek: max(6, (notch.height * 0.32).rounded())
+        case .expanded: 16
+        }
     }
 
     let calendar = CalendarStore()
@@ -124,18 +129,16 @@ final class IslandController {
         switch shape {
         case .hidden: return base
         case .compact: return hasActivity ? CGSize(width: base.width + Self.wing * 2, height: base.height) : base
-        case .peek: return CGSize(width: base.width + 140, height: base.height + 34)
-        case .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
-        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height + (tab == .calendar ? 40 : 0))
+        case .peek, .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
+        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height + (tab == .calendar ? 52 : 0))
         }
     }
 
     var bottomRadius: CGFloat {
         switch shape {
         case .hidden, .compact: (notch.height * 0.3).rounded()
-        case .peek: 18
-        case .hud: (notch.height * 0.36).rounded()
-        case .expanded: 24
+        case .peek, .hud: (notch.height * 0.4).rounded()
+        case .expanded: 30
         }
     }
 
@@ -178,10 +181,10 @@ final class IslandController {
         }
     }
 
-    func announce(_ text: String, symbol: String, tint: Color) {
-        guard presence != .off, !appIsInFront else { return }
+    func announce(_ title: String, detail: String, symbol: String, tint: Color) {
+        guard presence != .off, !appIsInFront, shape != .hud else { return }
         announcementTask?.cancel()
-        announcement = Announcement(text: text, symbol: symbol, tint: tint)
+        announcement = Announcement(title: title, detail: detail, symbol: symbol, tint: tint)
         if shape != .expanded { transition(to: .peek) }
         announcementTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.8))
