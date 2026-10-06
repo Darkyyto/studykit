@@ -37,6 +37,7 @@ struct RootView: View {
     @AppStorage("section") private var section = AppSection.focus
     @State private var modal: Modal?
     @State private var isOnScreen = true
+    @State private var hidesUpdateBanner = false
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
     @Environment(FocusEngine.self) private var engine
     @AppStorage(Preference.hasOnboarded) private var hasOnboarded = false
@@ -106,6 +107,17 @@ struct RootView: View {
                 .id(section)
                 .environment(\.chromeInset, showsChrome ? 72 : 44)
 
+            if let release = updater.available, !hidesUpdateBanner, !isImmersive {
+                UpdateBanner(release: release) {
+                    updater.presented = release
+                } close: {
+                    withAnimation(Motion.standard) { hidesUpdateBanner = true }
+                }
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, 22)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
             TabBar(selection: $section)
                 .padding(.top, 12)
                 .opacity(showsChrome ? 1 : 0)
@@ -121,6 +133,7 @@ struct RootView: View {
         }
         .animation(Motion.standard, value: section)
         .animation(Motion.standard, value: isImmersive)
+        .animation(Motion.settle, value: updater.available?.version)
         .focusedSceneValue(\.section, $section)
         .card(item: $modal) { modal in
             switch modal {
@@ -356,4 +369,66 @@ private struct ProfileMenu: View {
 
 extension EnvironmentValues {
     @Entry var chromeInset: CGFloat = 72
+}
+
+private struct UpdateBanner: View {
+    let release: Updater.Release
+    let install: () -> Void
+    let close: () -> Void
+    @Environment(Updater.self) private var updater
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image("Logo")
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 34, height: 34)
+                .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("FocusKit \(release.version) is available")
+                    .font(.rounded(14, weight: .bold))
+                    .foregroundStyle(Palette.ink)
+                Text(subtitle)
+                    .font(.rounded(12, weight: .medium))
+                    .foregroundStyle(Palette.inkSecondary)
+                    .contentTransition(.numericText())
+            }
+            Button(action: install) {
+                Text(buttonTitle)
+                    .font(.rounded(13, weight: .semibold))
+                    .padding(.horizontal, 6)
+            }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.capsule)
+            .tint(FocusMode.flight.palette.deep)
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Palette.inkSecondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.pressable)
+            .help("Later")
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
+        .glassEffect(.regular, in: .capsule)
+        .shadow(color: .black.opacity(0.08), radius: 18, y: 8)
+    }
+
+    private var subtitle: String {
+        switch updater.state {
+        case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
+        case .ready: "Downloaded. Ready to install."
+        default: "Your sessions and lectures stay as they are."
+        }
+    }
+
+    private var buttonTitle: String {
+        if case .ready = updater.state { return "Install" }
+        if case .downloading = updater.state { return "Show" }
+        return "Update"
+    }
 }

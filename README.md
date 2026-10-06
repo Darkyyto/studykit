@@ -1,3 +1,15 @@
+<p align="center">
+  <img src="docs/banner.png" alt="FocusKit" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Darkyyto/studykit/releases/latest/download/FocusKit.dmg"><b>Download for Mac</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/Darkyyto/studykit/releases">Releases</a>
+  &nbsp;·&nbsp;
+  macOS 26 or later
+</p>
+
 # FocusKit
 
 A calm, focused workspace for macOS. Pick what you are working on, choose a mode, and watch it unfold while you work.
@@ -93,4 +105,6 @@ FocusKit/
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+FocusKit is free to use for personal, study and other noncommercial purposes under the [PolyForm Strict License 1.0.0](LICENSE). The source is published so you can see how it works and what it does with your data. Modifying it, redistributing it or publishing derived apps is not permitted.
+
+Versions up to 0.3.0 were released under the MIT License.

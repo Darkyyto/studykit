@@ -508,7 +508,7 @@ private struct UpdatesPane: View {
         case .downloading(let fraction): "Downloading… \(Int(fraction * 100))%"
         case .ready: "Downloaded and ready to install."
         case .failed(let message): message
-        case .idle: "Free and open source."
+        case .idle: "Free for personal use."
         }
     }
 }

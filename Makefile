@@ -1,12 +1,15 @@
 .PHONY: project build run dmg clean
 
 XCODEBUILD = xcodebuild -project FocusKit.xcodeproj -scheme FocusKit -destination 'platform=macOS,arch=arm64' -quiet
+LSREGISTER = /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+PRODUCTS = $$(xcodebuild -project FocusKit.xcodeproj -scheme FocusKit -configuration $(1) -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $$2}')/FocusKit.app
 
 project:
 	xcodegen generate --quiet
 
 build: project
 	$(XCODEBUILD) -configuration Release build
+	$(LSREGISTER) -u "$(call PRODUCTS,Release)" || true
 
 run: project
 	$(XCODEBUILD) -configuration Debug build
