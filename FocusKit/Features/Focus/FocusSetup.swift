@@ -570,6 +570,12 @@ private struct CustomizeCard: View {
                     Chip(title: document.title, symbol: nil, isSelected: false, tint: tint) {
                         documentID = document.id
                     }
+                    .contextMenu {
+                        Button("Remove from FocusKit", role: .destructive) {
+                            withAnimation(Motion.standard) { library.delete(document) }
+                        }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
         }
