@@ -10,6 +10,8 @@ struct SessionView: View {
     @AppStorage(Preference.transcriptionLocale) private var localeIdentifier = ""
     @AppStorage(Preference.persona) private var persona = Persona.personal
     @State private var showsCompanion = false
+    @State private var expandsCompanion = false
+    @AppStorage("companionWidth") private var companionWidth = 330.0
     @State private var showsReader = true
     @State private var companion = Companion.notes
     @State private var confirmsEnd = false
@@ -18,7 +20,7 @@ struct SessionView: View {
 
     var body: some View {
         if let plan = engine.plan {
-            let panelWidth: CGFloat = hasPanel(plan) ? 352 : 0
+            let panelWidth: CGFloat = hasPanel(plan) && !expandsCompanion ? CGFloat(companionWidth) + 22 : 0
             ZStack(alignment: .bottom) {
                 if let document = readerDocument(plan) {
                     ReaderStage(
@@ -54,10 +56,14 @@ struct SessionView: View {
                 if hasPanel(plan) {
                     HStack(alignment: .top) {
                         Spacer()
-                        CompanionPanel(kind: plan.kind, tint: plan.mode.palette.deep, selection: $companion) {
-                            withAnimation(Motion.morph) { showsCompanion = false }
+                        CompanionPanel(kind: plan.kind, tint: plan.mode.palette.deep, selection: $companion, width: $companionWidth, isExpanded: $expandsCompanion) {
+                            withAnimation(Motion.morph) {
+                                showsCompanion = false
+                                expandsCompanion = false
+                            }
                         }
                     }
+                    .padding(.leading, expandsCompanion ? 16 : 0)
                     .padding(.top, chromeInset)
                     .padding(.trailing, 16)
                     .padding(.bottom, 16)
@@ -87,6 +93,7 @@ struct SessionView: View {
             .animation(Motion.settle, value: confirmsEnd)
             .animation(Motion.settle, value: showsCompletion)
             .animation(Motion.morph, value: hasPanel(plan))
+            .animation(Motion.morph, value: expandsCompanion)
             .animation(Motion.morph, value: showsReader)
             .background {
                 Button("") {
@@ -96,6 +103,9 @@ struct SessionView: View {
                 .hidden()
             }
             .onAppear { prepare(plan) }
+            .onChange(of: showsCompanion) { _, shows in
+                if !shows { expandsCompanion = false }
+            }
             .onChange(of: engine.phase.isComplete) { _, isComplete in
                 guard isComplete else { return }
                 showsCompletion = true

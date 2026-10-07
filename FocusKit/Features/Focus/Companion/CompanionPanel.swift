@@ -4,11 +4,38 @@ struct CompanionPanel: View {
     let kind: SessionKind
     let tint: Color
     @Binding var selection: Companion
+    @Binding var width: Double
+    @Binding var isExpanded: Bool
     let close: () -> Void
     @Environment(FocusEngine.self) private var engine
     @Environment(VoiceRecorder.self) private var recorder
     @FocusState private var focusedField: Companion?
     @State private var draft = ""
+    @State private var dragStart: Double?
+    @State private var isHoveringEdge = false
+
+    static let widthRange: ClosedRange<Double> = 300...640
+
+    private var textSize: CGFloat {
+        if isExpanded { return 18 }
+        return width > 460 ? 16 : 15
+    }
+
+    private var panelWidth: CGFloat? {
+        isExpanded ? nil : CGFloat(width)
+    }
+
+    private var contentWidth: CGFloat {
+        isExpanded ? 760 : .infinity
+    }
+
+    private var panelMaxWidth: CGFloat? {
+        isExpanded ? .infinity : nil
+    }
+
+    private var panelMaxHeight: CGFloat {
+        isExpanded ? .infinity : 600
+    }
 
     static func tabs(for kind: SessionKind) -> [Companion] {
         kind.companions.filter { $0 != .recall }
@@ -19,6 +46,18 @@ struct CompanionPanel: View {
             HStack(spacing: 8) {
                 GlassSegmented(options: Self.tabs(for: kind), selection: $selection, tint: tint) { $0.title }
                 Spacer(minLength: 0)
+                Button {
+                    withAnimation(Motion.morph) { isExpanded.toggle() }
+                } label: {
+                    Image(systemName: isExpanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.inkSecondary)
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 30, height: 30)
+                        .contentShape(.circle)
+                }
+                .buttonStyle(.pressable)
+                .help(isExpanded ? "Shrink (⇧⌘\\)" : "Expand (⇧⌘\\)")
                 Button(action: close) {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
@@ -39,13 +78,19 @@ struct CompanionPanel: View {
                 case .recall: EmptyView()
                 }
             }
-            .frame(maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: contentWidth, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity)
             .transition(.opacity)
         }
-        .padding(16)
-        .frame(width: 330)
-        .frame(maxHeight: 600)
-        .background(.white.opacity(0.88), in: .rect(cornerRadius: 24))
+        .padding(isExpanded ? 20 : 16)
+        .frame(width: panelWidth)
+        .frame(maxWidth: panelMaxWidth, maxHeight: panelMaxHeight)
+        .background(.white.opacity(isExpanded ? 0.94 : 0.88), in: .rect(cornerRadius: 24))
+        .overlay(alignment: .leading) {
+            if !isExpanded {
+                resizeEdge
+            }
+        }
         .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
         .shadow(color: .black.opacity(0.1), radius: 30, y: 14)
         .animation(Motion.standard, value: selection)
@@ -56,7 +101,42 @@ struct CompanionPanel: View {
             }
             .keyboardShortcut("d", modifiers: .command)
             .hidden()
+            Button("") {
+                withAnimation(Motion.morph) { isExpanded.toggle() }
+            }
+            .keyboardShortcut("\\", modifiers: [.command, .shift])
+            .hidden()
         }
+    }
+
+    private var resizeEdge: some View {
+        Capsule()
+            .fill(Palette.inkTertiary.opacity(isHoveringEdge || dragStart != nil ? 0.8 : 0))
+            .frame(width: 4, height: 44)
+            .frame(width: 14)
+            .frame(maxHeight: .infinity)
+            .contentShape(.rect)
+            .offset(x: -7)
+            .pointerStyle(.frameResize(position: .leading))
+            .onHover { hovering in
+                withAnimation(Motion.quick) { isHoveringEdge = hovering }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .onChanged { value in
+                        let start: Double = dragStart ?? width
+                        dragStart = start
+                        let proposed: Double = start - Double(value.translation.width)
+                        width = Self.widthRange.clamped(proposed)
+                    }
+                    .onEnded { _ in
+                        withAnimation(Motion.quick) { dragStart = nil }
+                    }
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(Motion.morph) { width = 330 }
+            }
+            .help("Drag to resize")
     }
 
     private var notes: some View {
@@ -65,14 +145,14 @@ struct CompanionPanel: View {
             ZStack(alignment: .topLeading) {
                 if workspace.notes.isEmpty {
                     Text(kind.notesPlaceholder)
-                        .font(.rounded(15, weight: .medium))
+                        .font(.rounded(textSize, weight: .medium))
                         .foregroundStyle(Palette.inkTertiary)
                         .padding(.top, 8)
                         .padding(.leading, 5)
                         .allowsHitTesting(false)
                 }
                 TextEditor(text: $workspace.notes)
-                    .font(.rounded(15, weight: .medium))
+                    .font(.rounded(textSize, weight: .medium))
                     .foregroundStyle(Palette.ink)
                     .scrollContentBackground(.hidden)
                     .focused($focusedField, equals: .notes)
@@ -118,8 +198,8 @@ struct CompanionPanel: View {
                             Text("\(Text(recorder.finalizedText).foregroundStyle(Palette.ink)) \(Text(recorder.volatileText).foregroundStyle(Palette.inkTertiary))")
                         }
                     }
-                    .font(.rounded(14, weight: .medium))
-                    .lineSpacing(5)
+                    .font(.rounded(textSize - 1, weight: .medium))
+                    .lineSpacing(isExpanded ? 7 : 5)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     Color.clear.frame(height: 1).id("end")
@@ -250,5 +330,11 @@ struct CompanionPanel: View {
         .padding(.horizontal, 12)
         .frame(height: 36)
         .background(.white.opacity(0.7), in: .capsule)
+    }
+}
+
+private extension ClosedRange where Bound == Double {
+    func clamped(_ value: Double) -> Double {
+        Swift.min(upperBound, Swift.max(lowerBound, value))
     }
 }

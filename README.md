@@ -46,7 +46,7 @@ Sessions can have several rounds with breaks in between. Breaks switch to a guid
 
 ## Recording
 
-Lecture and Meeting sessions record while you focus. The live transcript appears beside your own notes.
+Lecture and Meeting sessions record while you focus. The live transcript appears beside your own notes. Drag the edge of the panel to make it wider, or expand it to the whole window with ⇧⌘\\ to read along in larger type.
 
 - Quiet or distant voices are boosted and low hum is filtered out, so a professor across the room is still heard.
 - The transcript is saved every few seconds and the audio survives a crash. An interrupted recording is recovered the next time FocusKit opens.
