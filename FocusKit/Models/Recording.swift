@@ -12,6 +12,7 @@ struct Recording: Identifiable, Codable, Hashable, Sendable {
     var notes: SmartNotes?
     var stage: Stage?
     var wasInterrupted: Bool?
+    var isNamed: Bool?
 
     enum Stage: String, Codable, Sendable {
         case recording

@@ -126,7 +126,8 @@ struct SessionView: View {
                     locale: .speech(localeIdentifier),
                     goalID: plan.goalID,
                     vocabulary: library.activeGoals.map(\.title),
-                    noun: plan.kind == .lecture ? "Lecture" : "Meeting"
+                    noun: plan.kind == .lecture ? "Lecture" : "Meeting",
+                    name: plan.intention
                 )
             }
         }

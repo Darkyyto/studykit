@@ -149,6 +149,7 @@ struct RecordingsScreen: View {
                 let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                 if var recording = renaming, !title.isEmpty {
                     recording.title = title
+                    recording.isNamed = true
                     library.save(recording)
                 }
                 renaming = nil

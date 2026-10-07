@@ -31,6 +31,7 @@ final class VoiceRecorder {
     @ObservationIgnored private var fileName: String?
     @ObservationIgnored private var goalID: Goal.ID?
     @ObservationIgnored private var noun = "Note"
+    @ObservationIgnored private var name = ""
     @ObservationIgnored private var draftID: Recording.ID?
     @ObservationIgnored private var lastDraftSave = Date.distantPast
 
@@ -46,7 +47,7 @@ final class VoiceRecorder {
         state == .preparing || state == .downloadingModel || state == .finishing
     }
 
-    func start(locale: Locale, goalID: Goal.ID?, vocabulary: [String] = [], noun: String = "Note") async {
+    func start(locale: Locale, goalID: Goal.ID?, vocabulary: [String] = [], noun: String = "Note", name: String = "") async {
         guard state == .idle else { return }
         reset()
         state = .preparing
@@ -85,6 +86,7 @@ final class VoiceRecorder {
         self.capture = capture
         self.goalID = goalID
         self.noun = noun
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         fileName = name
         transcriptionLocale = transcription?.locale
         state = .recording(since: .now)
@@ -129,11 +131,16 @@ final class VoiceRecorder {
             localeIdentifier: transcriptionLocale?.identifier ?? Locale.current.identifier,
             goalID: goalID
         )
+        if !name.isEmpty {
+            recording.title = name
+            recording.isNamed = true
+        }
         if let draftID {
             recording.id = draftID
         }
         if let existing = library.recordings.first(where: { $0.id == recording.id }) {
             recording.title = existing.title
+            recording.isNamed = existing.isNamed
         }
         return recording
     }
@@ -147,11 +154,11 @@ final class VoiceRecorder {
         library.save(draft)
     }
 
-    func startForSession(locale: Locale, goalID: Goal.ID?, vocabulary: [String], noun: String) async {
+    func startForSession(locale: Locale, goalID: Goal.ID?, vocabulary: [String], noun: String, name: String) async {
         guard state == .idle, !ownedBySession else { return }
         ownedBySession = true
         recordedThisSession = false
-        await start(locale: locale, goalID: goalID, vocabulary: vocabulary, noun: noun)
+        await start(locale: locale, goalID: goalID, vocabulary: vocabulary, noun: noun, name: name)
         if isActive {
             recordedThisSession = true
         } else {

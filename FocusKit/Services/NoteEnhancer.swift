@@ -98,7 +98,7 @@ final class NoteEnhancer {
                 let excerpt = String(polished.prefix(Self.digestLength))
                 let digest = try? await Self.digest(excerpt, language: language, persona: persona)
                 guard var current = library.recordings.first(where: { $0.id == recording.id }) else { return }
-                if let digest, current.title == recording.title, !digest.title.isEmpty {
+                if let digest, current.isNamed != true, current.title == recording.title, !digest.title.isEmpty {
                     current.title = digest.title
                 }
                 current.notes = SmartNotes(
