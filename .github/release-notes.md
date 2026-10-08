@@ -1,5 +1,1 @@
-- Focus modes in the notch now work on the latest macOS
-- Lock and unlock notices arrive right away, even when FocusKit is in the background
-- A slightly smaller, tidier notch
-- The brightness notice no longer appears when your Mac dims on its own, like when you unplug it
-- Videos from other apps, like Prime Video, no longer get replaced by a paused Spotify when you open the notch
+- The timer next to the notch no longer slips under the camera

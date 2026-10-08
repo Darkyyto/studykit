@@ -80,7 +80,7 @@ final class IslandController {
 
     static let canvas = CGSize(width: 760, height: 340)
     static let expandedSize = CGSize(width: 500, height: 166)
-    static let wing: CGFloat = 50
+    static let wing: CGFloat = 56
     static let wideWing: CGFloat = 80
 
     var wing: CGFloat {
