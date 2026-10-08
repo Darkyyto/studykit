@@ -65,11 +65,23 @@ final class IslandController {
     @ObservationIgnored private var previewTask: Task<Void, Never>?
     @ObservationIgnored private var refreshPending = false
     @ObservationIgnored private var isInstalled = false
+    @ObservationIgnored private var scrollMonitors: [Any] = []
+    @ObservationIgnored private var swipe = CGSize.zero
+    @ObservationIgnored private var swipeFired = false
+    @ObservationIgnored private var holdsClosed = false
 
     static let offsetKey = "notchOffset"
     static let heightKey = "notchHeightAdjustment"
     static let previewNotification = Notification.Name("FocusKitNotchPreview")
     static let hapticsKey = "notchHaptics"
+    static let swipeKey = "notchSwipeGestures"
+    static let hoverDelayKey = "notchHoverDelay"
+
+    static var hoverDelay: Double {
+        let delay = UserDefaults.standard.object(forKey: hoverDelayKey) as? Double ?? 0.15
+        let swipes = UserDefaults.standard.object(forKey: swipeKey) as? Bool ?? true
+        return delay < 0 && !swipes ? 0.15 : delay
+    }
 
     static func tap() {
         guard UserDefaults.standard.object(forKey: hapticsKey) as? Bool ?? true else { return }
@@ -291,6 +303,7 @@ final class IslandController {
             MainActor.assumeIsolated { self?.pointerMoved() }
         }
         pointerWatcher?.tolerance = 0.02
+        watchSwipes()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()
@@ -376,14 +389,18 @@ final class IslandController {
         let midX = panel?.frame.midX ?? screen.frame.midX
         let band = CGRect(x: midX - width / 2, y: screen.frame.maxY - depth, width: width, height: depth)
         guard band.contains(NSEvent.mouseLocation) else {
+            holdsClosed = false
             hoverIntent?.cancel()
             hoverIntent = nil
             return
         }
+        guard !holdsClosed || dropping else { return }
+        let delay = Self.hoverDelay
+        guard dropping || delay >= 0 else { return }
         guard hoverIntent == nil else { return }
         hoverIntent = Task { [weak self] in
             if !dropping {
-                try? await Task.sleep(for: .milliseconds(140))
+                try? await Task.sleep(for: .seconds(delay))
             }
             guard !Task.isCancelled, let self else { return }
             self.hoverIntent = nil
@@ -412,6 +429,116 @@ final class IslandController {
         exitWatcher = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkExit() }
         }
+    }
+
+    private struct Scroll: Sendable {
+        let began: Bool
+        let changed: Bool
+        let ended: Bool
+        let isMomentum: Bool
+        let isPrecise: Bool
+        let isNatural: Bool
+        let dx: CGFloat
+        let dy: CGFloat
+
+        init(_ event: NSEvent) {
+            began = event.phase.contains(.began) || event.phase.contains(.mayBegin)
+            changed = event.phase.contains(.changed)
+            ended = event.phase.contains(.ended) || event.phase.contains(.cancelled)
+            isMomentum = !event.momentumPhase.isEmpty
+            isPrecise = event.hasPreciseScrollingDeltas
+            isNatural = event.isDirectionInvertedFromDevice
+            dx = event.scrollingDeltaX
+            dy = event.scrollingDeltaY
+        }
+    }
+
+    private func watchSwipes() {
+        let global = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            let scroll = Scroll(event)
+            MainActor.assumeIsolated { self?.scrolled(scroll) }
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            let scroll = Scroll(event)
+            MainActor.assumeIsolated { self?.scrolled(scroll) }
+            return event
+        }
+        scrollMonitors = [global, local].compactMap { $0 }
+    }
+
+    private var swipeArea: CGRect? {
+        guard let panel, let screen else { return nil }
+        if shape == .expanded {
+            let size = size
+            return CGRect(x: panel.frame.midX - size.width / 2, y: panel.frame.maxY - size.height, width: size.width, height: size.height)
+        }
+        let width = max(size.width, max(notch.width, 180)) + 40
+        let depth = notch.height + 10
+        return CGRect(x: panel.frame.midX - width / 2, y: screen.frame.maxY - depth, width: width, height: depth)
+    }
+
+    private func scrolled(_ scroll: Scroll) {
+        guard scroll.isPrecise, !scroll.isMomentum, presence != .off,
+              UserDefaults.standard.object(forKey: Self.swipeKey) as? Bool ?? true,
+              let area = swipeArea, area.contains(NSEvent.mouseLocation) else { return }
+        if scroll.began {
+            swipe = .zero
+            swipeFired = false
+        }
+        if scroll.ended {
+            swipe = .zero
+            swipeFired = false
+            return
+        }
+        guard scroll.changed, !swipeFired else { return }
+        swipe.width += scroll.dx
+        swipe.height += scroll.dy
+        let threshold: CGFloat = 26
+        if abs(swipe.width) > threshold, abs(swipe.width) > abs(swipe.height) * 1.4 {
+            let fingersRight = scroll.isNatural ? swipe.width > 0 : swipe.width < 0
+            if swipedSideways(fingersRight: fingersRight) { swipeFired = true }
+        } else if abs(swipe.height) > threshold, abs(swipe.height) > abs(swipe.width) * 1.4 {
+            let fingersDown = scroll.isNatural ? swipe.height > 0 : swipe.height < 0
+            if swipedVertically(fingersDown: fingersDown) { swipeFired = true }
+        }
+    }
+
+    private func swipedSideways(fingersRight: Bool) -> Bool {
+        if shape == .expanded {
+            guard !(tab == .tray && !tray.items.isEmpty) else { return false }
+            let tabs: [Tab] = [.home, .music, .calendar] + (FileTray.isEnabled ? [.tray] : []) + [.clipboard]
+            guard let index = tabs.firstIndex(of: tab) else { return false }
+            let target = fingersRight ? index - 1 : index + 1
+            guard tabs.indices.contains(target) else { return false }
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { tab = tabs[target] }
+            Self.tap()
+            return true
+        }
+        guard nowPlaying.hasTrack else { return false }
+        if fingersRight {
+            nowPlaying.previous()
+        } else {
+            nowPlaying.next()
+        }
+        Self.tap()
+        return true
+    }
+
+    private func swipedVertically(fingersDown: Bool) -> Bool {
+        if fingersDown {
+            guard shape != .expanded else { return false }
+            hoverIntent?.cancel()
+            hoverIntent = nil
+            holdsClosed = false
+            nowPlaying.refreshIfNeeded()
+            transition(to: .expanded)
+        } else {
+            guard shape == .expanded, tab == .home || tab == .music else { return false }
+            holdsClosed = true
+            transition(to: restingShape)
+        }
+        Self.tap()
+        return true
     }
 
     private func checkExit() {

@@ -30,10 +30,18 @@ final class FocusLog: @unchecked Sendable {
     private func launch() {
         guard isWanted, process == nil else { return }
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/log")
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
         task.arguments = [
-            "stream", "--style", "compact",
-            "--predicate", "process == \"duetexpertd\" AND eventMessage CONTAINS \"userFocusComputedModeEvent\"",
+            "-c",
+            """
+            /usr/bin/log stream --style compact --predicate "$1" &
+            child=$!
+            trap 'kill $child 2>/dev/null; exit 0' TERM INT HUP
+            while kill -0 $PPID 2>/dev/null && kill -0 $child 2>/dev/null; do sleep 2; done
+            kill $child 2>/dev/null
+            """,
+            "sh",
+            "process == \"duetexpertd\" AND eventMessage CONTAINS \"userFocusComputedModeEvent\"",
         ]
         let pipe = Pipe()
         task.standardOutput = pipe

@@ -535,6 +535,8 @@ private struct NotchPane: View {
     @AppStorage(DeviceWatcher.batteryKey) private var noticesBattery = true
     @AppStorage(DeviceWatcher.focusKey) private var noticesFocus = true
     @AppStorage(DeviceWatcher.lowPowerKey) private var noticesLowPower = true
+    @AppStorage(IslandController.swipeKey) private var swipeGestures = true
+    @AppStorage(IslandController.hoverDelayKey) private var hoverDelay = 0.15
     @AppStorage(IslandController.heightKey) private var notchHeight = 0.0
     private let hasNotch = NSScreen.screens.contains { $0.safeAreaInsets.top > 0 }
     @Environment(SystemHUD.self) private var systemHUD
@@ -595,6 +597,23 @@ private struct NotchPane: View {
             }
             Footnote(text: "Move the pointer to the top of the screen to open the notch: your session, music, and the day ahead.")
             SettingsCard {
+                SettingsRow(title: "Open on hover", detail: "How long the pointer rests on the notch before it opens. Swipe only keeps it closed until you swipe down.", symbol: "cursorarrow.motionlines", tint: Color(hex: 0xFF9F0A)) {
+                    Picker("Open on hover", selection: $hoverDelay) {
+                        Text("Instant").tag(0.05)
+                        Text("Short").tag(0.15)
+                        Text("Medium").tag(0.35)
+                        Text("Long").tag(0.6)
+                        Divider()
+                        Text("Swipe only").tag(-1.0)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                SettingsRow(title: "Swipe gestures", detail: "On the trackpad, swipe down on the notch to open it and up to close it. Swipe sideways to move between sections, or to skip tracks while it is closed.", symbol: "hand.draw.fill", tint: Color(hex: 0x0A84FF)) {
+                    Toggle("", isOn: $swipeGestures)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
                 SettingsRow(title: "Haptic feedback", detail: "Feel a light tap on the trackpad when the notch opens or takes a file.", showsDivider: false, symbol: "hand.tap.fill", tint: Color(hex: 0x5E5CE6)) {
                     Toggle("", isOn: $haptics)
                         .toggleStyle(.switch)

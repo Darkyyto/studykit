@@ -34,6 +34,8 @@ final class Updater {
     @ObservationIgnored private var quietUpdate: URL?
     @ObservationIgnored var canRestart: (@MainActor () -> Bool)?
     @ObservationIgnored private var periodicCheck: Timer?
+    @ObservationIgnored private var wakeObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var lastBackgroundCheck = Date.distantPast
     private(set) var isQuiet = false
 
     static let installsFixesKey = "installsFixesAutomatically"
@@ -79,16 +81,34 @@ final class Updater {
         }
         guard isConfigured else { return }
         if checksAutomatically || wasBlocked {
+            lastBackgroundCheck = .now
             Task { await check(userInitiated: false) }
         }
         periodicCheck?.invalidate()
-        periodicCheck = Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, self.checksAutomatically, self.quietUpdate == nil, self.download == nil else { return }
-                Task { await self.check(userInitiated: false) }
+        periodicCheck = Timer.scheduledTimer(withTimeInterval: 30 * 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkInBackground() }
+        }
+        periodicCheck?.tolerance = 120
+        guard wakeObservers.isEmpty else { return }
+        let names: [(NotificationCenter, Notification.Name)] = [
+            (NotificationCenter.default, NSApplication.didBecomeActiveNotification),
+            (NSWorkspace.shared.notificationCenter, NSWorkspace.didWakeNotification),
+        ]
+        wakeObservers = names.map { center, name in
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self?.checkInBackground() }
+                }
             }
         }
-        periodicCheck?.tolerance = 600
+    }
+
+    private func checkInBackground() {
+        guard checksAutomatically, isConfigured, quietUpdate == nil, download == nil,
+              Date.now.timeIntervalSince(lastBackgroundCheck) > 10 * 60 else { return }
+        if case .checking = state { return }
+        lastBackgroundCheck = .now
+        Task { await check(userInitiated: false) }
     }
 
     func check(userInitiated: Bool) async {
@@ -256,7 +276,7 @@ final class Updater {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         try? FileManager.default.removeItem(at: Self.failureMarker)
-        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(url.deletingLastPathComponent()), Self.plainPath(Self.failureMarker), relaunch.rawValue]
+        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(FileManager.default.temporaryDirectory.appending(path: "FocusKitUpdate", directoryHint: .isDirectory)), Self.plainPath(Self.failureMarker), relaunch.rawValue]
         do {
             try process.run()
             return true

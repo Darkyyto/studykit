@@ -1,2 +1,4 @@
-<!-- silent -->
-- The music player in the notch has more room at the bottom
+- Swipe gestures in the notch: swipe down to open, up to close, and sideways to move between sections or skip tracks
+- Choose how long the pointer rests on the notch before it opens, or open it only with a swipe
+- Updates are found sooner, while FocusKit runs in the background
+- FocusKit no longer lingers in the Dock after you quit
