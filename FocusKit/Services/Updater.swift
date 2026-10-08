@@ -11,6 +11,7 @@ final class Updater {
         let diskImage: URL
         let page: URL
         var isSilent = false
+        var archive: URL?
     }
 
     enum State: Equatable {
@@ -83,6 +84,10 @@ final class Updater {
             wasBlocked = true
         }
         guard (checksAutomatically || wasBlocked), isConfigured else { return }
+        guard UserDefaults.standard.string(forKey: Self.updatedFromKey) == nil else {
+            Task { await check(userInitiated: false) }
+            return
+        }
         launchPhase = .checking
         Task {
             await check(userInitiated: false)
@@ -119,10 +124,11 @@ final class Updater {
             }
             let diskImage = latest.diskImage
             let page = latest.page
+            let archive = latest.archive
             let body = latest.notes
             let silent = body.contains("<!-- silent -->")
             let notes = body.replacingOccurrences(of: "<!-- silent -->", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let release = Release(version: version, notes: notes, diskImage: diskImage, page: page, isSilent: silent)
+            let release = Release(version: version, notes: notes, diskImage: diskImage, page: page, isSilent: silent, archive: archive)
             if quietUpdate != nil, pending?.version == version, !userInitiated {
                 return
             }
@@ -148,6 +154,7 @@ final class Updater {
         let notes: String
         let diskImage: URL
         let page: URL
+        var archive: URL?
     }
 
     private struct Manifest: Decodable {
@@ -155,6 +162,7 @@ final class Updater {
         let notes: String
         let dmg: String
         let page: String
+        let zip: String?
     }
 
     private static func latest() async throws -> Latest? {
@@ -166,7 +174,7 @@ final class Updater {
            let decoded = try? JSONDecoder().decode(Manifest.self, from: data),
            let diskImage = URL(string: decoded.dmg),
            let page = URL(string: decoded.page) {
-            return Latest(version: decoded.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), notes: decoded.notes, diskImage: diskImage, page: page)
+            return Latest(version: decoded.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), notes: decoded.notes, diskImage: diskImage, page: page, archive: decoded.zip.flatMap(URL.init(string:)))
         }
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -232,9 +240,9 @@ final class Updater {
         APP="${3%/}"
         WORK="${4%/}"
         case "$APP" in */*.app) ;; *) exit 1 ;; esac
-        while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+        while kill -0 "$1" 2>/dev/null; do sleep 0.1; done
         rm -rf "$APP.updating" "$APP.previous"
-        if ditto "$STAGED" "$APP.updating" && mv "$APP" "$APP.previous"; then
+        if { mv "$STAGED" "$APP.updating" 2>/dev/null || ditto "$STAGED" "$APP.updating"; } && mv "$APP" "$APP.previous"; then
           if mv "$APP.updating" "$APP"; then
             rm -rf "$APP.previous"
             xattr -dr com.apple.quarantine "$APP" 2>/dev/null
@@ -331,7 +339,7 @@ final class Updater {
         try await Task.detached(priority: .userInitiated) {
             let mount = work.appending(path: "volume", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
-            try run("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-readonly", "-mountpoint", mount.path(percentEncoded: false), diskImage.path(percentEncoded: false)])
+            try run("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-readonly", "-noverify", "-noautofsck", "-mountpoint", mount.path(percentEncoded: false), diskImage.path(percentEncoded: false)])
             defer { try? run("/usr/bin/hdiutil", ["detach", "-quiet", "-force", mount.path(percentEncoded: false)]) }
             let source = mount.appending(path: "FocusKit.app", directoryHint: .isDirectory)
             guard Bundle(url: source)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
@@ -340,6 +348,20 @@ final class Updater {
             let staged = work.appending(path: "FocusKit.app", directoryHint: .isDirectory)
             try? FileManager.default.removeItem(at: staged)
             try run("/usr/bin/ditto", [source.path(percentEncoded: false), staged.path(percentEncoded: false)])
+            try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staged.path(percentEncoded: false)])
+            return staged
+        }.value
+    }
+
+    nonisolated private static func unpack(_ archive: URL, in work: URL) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            let folder = work.appending(path: "unpacked", directoryHint: .isDirectory)
+            try? FileManager.default.removeItem(at: folder)
+            try run("/usr/bin/ditto", ["-x", "-k", archive.path(percentEncoded: false), folder.path(percentEncoded: false)])
+            let staged = folder.appending(path: "FocusKit.app", directoryHint: .isDirectory)
+            guard Bundle(url: staged)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
             try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staged.path(percentEncoded: false)])
             return staged
         }.value
@@ -367,33 +389,30 @@ final class Updater {
         download = Task {
             defer { download = nil }
             do {
-                let (bytes, response) = try await URLSession.shared.bytes(from: release.diskImage)
-                let expected = Double(max(response.expectedContentLength, 1))
+                let tracker = DownloadTracker()
+                let progress = Task {
+                    while !Task.isCancelled {
+                        if let fraction = tracker.fraction, case .downloading = state {
+                            state = .downloading(min(1, fraction))
+                        }
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
+                defer { progress.cancel() }
+                let archive = SandboxMigration.isSandboxed ? nil : release.archive
+                let (location, response) = try await URLSession.shared.download(from: archive ?? release.diskImage, delegate: tracker)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
                 let work = FileManager.default.temporaryDirectory.appending(path: "FocusKitUpdate", directoryHint: .isDirectory)
                 try? FileManager.default.removeItem(at: work)
                 try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
-                let destination = work.appending(path: "FocusKit-\(release.version).dmg")
-                try? FileManager.default.removeItem(at: destination)
-                FileManager.default.createFile(atPath: destination.path(percentEncoded: false), contents: nil)
-                let handle = try FileHandle(forWritingTo: destination)
-                var buffer = Data()
-                var received = 0.0
-                for try await byte in bytes {
-                    buffer.append(byte)
-                    if buffer.count >= 256 * 1024 {
-                        try handle.write(contentsOf: buffer)
-                        received += Double(buffer.count)
-                        buffer.removeAll(keepingCapacity: true)
-                        state = .downloading(min(1, received / expected))
-                    }
-                }
-                try handle.write(contentsOf: buffer)
-                try handle.close()
+                let destination = work.appending(path: "FocusKit-\(release.version).\(archive == nil ? "dmg" : "zip")")
+                try FileManager.default.moveItem(at: location, to: destination)
+                state = .downloading(1)
                 Backup.make(reason: "before-\(release.version)")
                 if SandboxMigration.isSandboxed {
                     state = .ready(destination)
                 } else {
-                    let staged = try await Self.stage(destination, in: work)
+                    let staged = try await archive == nil ? Self.stage(destination, in: work) : Self.unpack(destination, in: work)
                     state = .ready(staged)
                     if checkPermission(), isQuiet {
                         if launchPhase != nil, canRestart?() ?? true, applyNow(staged) {
@@ -442,6 +461,19 @@ final class Updater {
             let name: String
             let browser_download_url: String
         }
+    }
+}
+
+private final class DownloadTracker: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: URLSessionTask?
+
+    var fraction: Double? {
+        lock.withLock { task.map { $0.progress.fractionCompleted } }
+    }
+
+    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
+        lock.withLock { self.task = task }
     }
 }
 

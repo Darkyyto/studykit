@@ -1,2 +1,2 @@
 <!-- silent -->
-- About now credits Salise Studio, with links to salise.design and @salisestudio on X
+- Updates download and install in a couple of seconds

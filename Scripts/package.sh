@@ -48,5 +48,8 @@ hdiutil create -quiet -volname "FocusKit" -srcfolder "$WORK/stage" -ov -format U
 
 cp "$DMG" "$DIST/FocusKit.dmg"
 
+rm -f "$DIST/FocusKit-$VERSION.zip"
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/FocusKit-$VERSION.zip"
+
 echo "App  $(du -sh "$APP" | cut -f1)"
 echo "DMG  $(du -h "$DMG" | cut -f1)  $DMG"

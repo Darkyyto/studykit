@@ -59,6 +59,7 @@ jobs:
               "version": version,
               "notes": body,
               "dmg": f"https://github.com/{repo}/releases/download/{tag}/FocusKit-{version}.dmg",
+              "zip": f"https://github.com/{repo}/releases/download/{tag}/FocusKit-{version}.zip",
               "page": f"https://github.com/{repo}/releases/tag/{tag}",
           }
           with open("dist/update.json", "w") as out:
@@ -69,5 +70,6 @@ jobs:
         with:
           files: |
             dist/*.dmg
+            dist/*.zip
             dist/update.json
           body_path: .github/release-notes.md
