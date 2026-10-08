@@ -1,2 +1,2 @@
 <!-- silent -->
-- Update checks are more reliable on busy or shared networks
+- About now credits Salise Studio, with links to salise.design and @salisestudio on X

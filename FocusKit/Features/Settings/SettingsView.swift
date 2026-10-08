@@ -996,6 +996,15 @@ private struct AboutPane: View {
                 .padding(16)
             }
 
+            SettingsCard {
+                if let website = URL(string: "https://salise.design") {
+                    link("Made by Salise Studio", detail: "salise.design", symbol: "sparkles", tint: Color(hex: 0x1C1C1E), url: website)
+                }
+                if let profile = URL(string: "https://x.com/salisestudio") {
+                    link("Follow on X", detail: "@salisestudio", showsDivider: false, symbol: "at", tint: Color(hex: 0x1C1C1E), url: profile)
+                }
+            }
+
             if let repository {
                 SettingsCard {
                     link("Source code", detail: "The full source, published on GitHub.", symbol: "chevron.left.forwardslash.chevron.right", tint: Color(hex: 0x3A3A3C), url: repository)
