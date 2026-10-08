@@ -46,7 +46,7 @@
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>FocusKit shows your classes and meetings in the notch. Your calendar never leaves this Mac.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 Vincent Elias Picchi. Free for personal use.</string>
+	<string>© 2026 Salise Studio. Free for personal use.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>FocusKit records your voice notes and transcribes them on this Mac.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

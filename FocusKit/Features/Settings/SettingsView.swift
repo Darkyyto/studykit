@@ -992,7 +992,7 @@ private struct AboutPane: View {
                         Text("Version \(Updater.currentVersion)")
                             .font(.system(size: 12.5, weight: .medium))
                             .foregroundStyle(Palette.inkSecondary)
-                        Text("© 2026 Vincent Elias Picchi")
+                        Text("© 2026 Salise Studio")
                             .font(.system(size: 12))
                             .foregroundStyle(Palette.inkTertiary)
                     }
