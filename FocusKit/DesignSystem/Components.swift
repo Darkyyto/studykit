@@ -23,7 +23,7 @@ struct SurfaceCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.white.opacity(0.78), in: .rect(cornerRadius: radius))
+            .background(Palette.surface.opacity(0.78), in: .rect(cornerRadius: radius))
             .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
             .shadow(color: .black.opacity(0.05), radius: 16, y: 8)
     }

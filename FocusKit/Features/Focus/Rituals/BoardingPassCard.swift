@@ -22,7 +22,7 @@ struct BoardingPassCard: View {
         }
         .background {
             TicketShape(stubWidth: stubWidth)
-                .fill(.white)
+                .fill(Palette.surface)
         }
         .overlay(alignment: .top) {
             TicketShape(stubWidth: stubWidth)

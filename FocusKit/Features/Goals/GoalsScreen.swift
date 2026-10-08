@@ -62,7 +62,7 @@ struct GoalsScreen: View {
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.canvas)
                     .frame(width: 44, height: 44)
                     .background(Palette.ink, in: .circle)
             }
@@ -112,7 +112,7 @@ struct GoalsScreen: View {
                 .foregroundStyle(Palette.inkSecondary)
         }
         .padding(20)
-        .background(.white.opacity(0.7), in: .rect(cornerRadius: 22))
+        .background(Palette.surface.opacity(0.7), in: .rect(cornerRadius: 22))
     }
 
     private var empty: some View {
@@ -132,7 +132,7 @@ struct GoalsScreen: View {
                 .buttonStyle(.glassProminent)
                 .buttonBorderShape(.capsule)
                 .controlSize(.large)
-                .tint(Palette.ink)
+                .tint(Color(light: 0x1C1C22, dark: 0x3A3A41))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
@@ -236,7 +236,7 @@ private struct GoalRow: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
-            .background(.white.opacity(isHovering ? 0.9 : 0.65), in: .rect(cornerRadius: 18))
+            .background(Palette.surface.opacity(isHovering ? 0.9 : 0.65), in: .rect(cornerRadius: 18))
             .contentShape(.rect(cornerRadius: 18))
         }
         .buttonStyle(PressableStyle(scale: 0.99))

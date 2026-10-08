@@ -33,9 +33,11 @@ final class IslandController {
         case home
         case music
         case calendar
+        case tray
+        case clipboard
     }
 
-    struct Announcement: Equatable {
+    struct Announcement: Hashable {
         let title: String
         let detail: String
         let symbol: String
@@ -43,6 +45,7 @@ final class IslandController {
     }
 
     private(set) var shape: Shape = .hidden
+    private(set) var isPreviewing = false
     private(set) var announcement: Announcement?
     private(set) var notch = CGSize(width: 0, height: 32)
     var tab = Tab.home
@@ -59,10 +62,31 @@ final class IslandController {
     @ObservationIgnored private var hudTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var previewTask: Task<Void, Never>?
+    @ObservationIgnored private var refreshPending = false
+    @ObservationIgnored private var isInstalled = false
+
+    static let offsetKey = "notchOffset"
+    static let heightKey = "notchHeightAdjustment"
+    static let previewNotification = Notification.Name("FocusKitNotchPreview")
+    @ObservationIgnored private var restingDragCount = NSPasteboard(name: .drag).changeCount
+    @ObservationIgnored private var wasPressed = false
 
     static let canvas = CGSize(width: 760, height: 340)
     static let expandedSize = CGSize(width: 540, height: 178)
     static let wing: CGFloat = 54
+    static let wideWing: CGFloat = 80
+
+    var wing: CGFloat {
+        showsHours ? Self.wideWing : Self.wing
+    }
+
+    private var showsHours: Bool {
+        if recorder.isActive, case .recording(let since) = recorder.state {
+            return Date.now.timeIntervalSince(since) >= 3600
+        }
+        return engine.isActive && engine.remaining(at: engine.now) > 3599
+    }
     var fillet: CGFloat {
         switch shape {
         case .hidden: max(4, (notch.height * 0.2).rounded())
@@ -72,6 +96,11 @@ final class IslandController {
     }
 
     let calendar = CalendarStore()
+    let tray = FileTray()
+    let devices = DeviceWatcher()
+    let lockScreen = LockScreen()
+    let clipboard = ClipboardHistory()
+    @ObservationIgnored private let library: Library
     let systemHUD = SystemHUD()
     static let hudWing: CGFloat = 136
 
@@ -79,8 +108,9 @@ final class IslandController {
         self.engine = engine
         self.recorder = recorder
         self.nowPlaying = nowPlaying
+        self.library = library
 
-        let content = IslandView(controller: self, calendar: calendar, systemHUD: systemHUD)
+        let content = IslandView(controller: self, calendar: calendar, tray: tray, devices: devices, clipboard: clipboard, systemHUD: systemHUD)
             .environment(engine)
             .environment(recorder)
             .environment(library)
@@ -101,14 +131,19 @@ final class IslandController {
         ]
         observers = refreshers.map { name in
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refresh() }
+                MainActor.assumeIsolated { self?.scheduleRefresh() }
             }
         }
         observers.append(center.addObserver(forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.install() }
         })
         observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reposition() }
+            MainActor.assumeIsolated { self?.scheduleRefresh() }
+        })
+        observers.append(center.addObserver(forName: Self.previewNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.preview() }
+            }
         })
     }
 
@@ -128,9 +163,9 @@ final class IslandController {
         let base = CGSize(width: hasHardwareNotch ? notch.width : 180, height: notch.height)
         switch shape {
         case .hidden: return base
-        case .compact: return hasActivity ? CGSize(width: base.width + Self.wing * 2, height: base.height) : base
+        case .compact: return hasActivity ? CGSize(width: base.width + wing * 2, height: base.height) : base
         case .peek, .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
-        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height + (tab == .calendar ? 64 : 0))
+        case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height + (tab == .calendar ? 24 : 0))
         }
     }
 
@@ -145,7 +180,7 @@ final class IslandController {
     var isVisible: Bool {
         switch shape {
         case .hidden: false
-        case .compact: hasActivity
+        case .compact: hasActivity || isPreviewing
         case .peek, .hud, .expanded: true
         }
     }
@@ -159,6 +194,7 @@ final class IslandController {
     }
 
     private var restingShape: Shape {
+        if isPreviewing { return .compact }
         if presence == .off || appIsInFront { return .hidden }
         switch presence {
         case .always: return .compact
@@ -166,7 +202,22 @@ final class IslandController {
         }
     }
 
+    private func scheduleRefresh() {
+        guard !refreshPending else { return }
+        refreshPending = true
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.refreshPending = false
+                self.refresh()
+            }
+        }
+    }
+
     func refresh() {
+        guard isInstalled else { return }
+        reposition()
+        clipboard.syncWithPreference()
         guard shape == .hidden || shape == .compact else { return }
         transition(to: restingShape)
     }
@@ -184,8 +235,8 @@ final class IslandController {
         }
     }
 
-    func announce(_ title: String, detail: String, symbol: String, tint: Color) {
-        guard presence != .off, !appIsInFront, shape != .hud else { return }
+    func announce(_ title: String, detail: String, symbol: String, tint: Color, fromSystem: Bool = false) {
+        guard presence != .off, fromSystem || !appIsInFront, shape != .hud else { return }
         announcementTask?.cancel()
         announcement = Announcement(title: title, detail: detail, symbol: symbol, tint: tint)
         if shape != .expanded { transition(to: .peek) }
@@ -210,14 +261,21 @@ final class IslandController {
 
     private func install() {
         guard let panel else { return }
+        isInstalled = true
         systemHUD.start()
+        devices.start()
+        clipboard.start()
+        lockScreen.start(content: LockScreenView(lockScreen: lockScreen, calendar: calendar)
+            .environment(engine)
+            .environment(library)
+            .environment(nowPlaying))
         reposition()
         panel.ignoresMouseEvents = true
         panel.orderFrontRegardless()
-        pointerWatcher = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { [weak self] _ in
+        pointerWatcher = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pointerMoved() }
         }
-        pointerWatcher?.tolerance = 0.04
+        pointerWatcher?.tolerance = 0.02
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()
@@ -230,29 +288,69 @@ final class IslandController {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
     }
 
+    func preview() {
+        guard isInstalled else { return }
+        previewTask?.cancel()
+        isPreviewing = true
+        reposition()
+        if shape == .hidden { transition(to: .compact) }
+        previewTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled, let self else { return }
+            self.isPreviewing = false
+            self.refresh()
+        }
+    }
+
     private func reposition() {
         guard let panel, let screen else { return }
+        let defaults = UserDefaults.standard
+        let offset = defaults.double(forKey: Self.offsetKey)
+        let adjustment = defaults.double(forKey: Self.heightKey)
+        let scale = max(1, screen.backingScaleFactor)
+        var center = screen.frame.midX
+        let measured: CGSize
         if screen.safeAreaInsets.top > 0, let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
-            notch = CGSize(width: screen.frame.width - left.width - right.width, height: screen.safeAreaInsets.top)
+            let shift = abs(left.minX - screen.frame.minX) < 1 ? 0 : screen.frame.minX
+            center = (left.maxX + right.minX) / 2 + shift
+            measured = CGSize(width: max(0, right.minX - left.maxX), height: max(16, screen.safeAreaInsets.top + adjustment))
         } else {
-            notch = CGSize(width: 0, height: max(24, screen.frame.maxY - screen.visibleFrame.maxY))
+            measured = CGSize(width: 0, height: max(24, screen.frame.maxY - screen.visibleFrame.maxY))
         }
-        panel.setFrame(CGRect(
-            x: screen.frame.midX - Self.canvas.width / 2,
-            y: screen.frame.maxY - Self.canvas.height,
-            width: Self.canvas.width,
-            height: Self.canvas.height
-        ), display: true)
+        if measured != notch {
+            notch = measured
+        }
+        let x = ((center + offset - Self.canvas.width / 2) * scale).rounded() / scale
+        let frame = CGRect(x: x, y: screen.frame.maxY - Self.canvas.height, width: Self.canvas.width, height: Self.canvas.height)
+        if panel.frame != frame {
+            panel.setFrame(frame, display: true)
+        }
+    }
+
+    private func isDraggingFiles() -> Bool {
+        let pressed = NSEvent.pressedMouseButtons & 1 != 0
+        defer { wasPressed = pressed }
+        guard pressed else {
+            if wasPressed { restingDragCount = NSPasteboard(name: .drag).changeCount }
+            return false
+        }
+        let board = NSPasteboard(name: .drag)
+        return board.changeCount != restingDragCount
+            && board.canReadObject(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true])
     }
 
     private func pointerMoved() {
+        let draggingFiles = isDraggingFiles()
         guard presence != .off, shape != .expanded, let screen else {
             hoverIntent?.cancel()
             hoverIntent = nil
             return
         }
-        let width = max(size.width, max(notch.width, 180)) + 40
-        let band = CGRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - notch.height - 6, width: width, height: notch.height + 6)
+        let dropping = draggingFiles && FileTray.isEnabled
+        let width = dropping ? Self.expandedSize.width : max(size.width, max(notch.width, 180)) + 40
+        let depth = dropping ? notch.height + 90 : notch.height + 6
+        let midX = panel?.frame.midX ?? screen.frame.midX
+        let band = CGRect(x: midX - width / 2, y: screen.frame.maxY - depth, width: width, height: depth)
         guard band.contains(NSEvent.mouseLocation) else {
             hoverIntent?.cancel()
             hoverIntent = nil
@@ -260,10 +358,15 @@ final class IslandController {
         }
         guard hoverIntent == nil else { return }
         hoverIntent = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(140))
+            if !dropping {
+                try? await Task.sleep(for: .milliseconds(140))
+            }
             guard !Task.isCancelled, let self else { return }
             self.hoverIntent = nil
             if self.shape != .expanded {
+                if dropping {
+                    self.tab = .tray
+                }
                 self.nowPlaying.refreshIfNeeded()
                 self.transition(to: .expanded)
             }
@@ -295,7 +398,7 @@ final class IslandController {
             width: size.width + 32,
             height: size.height + 16
         )
-        if area.contains(NSEvent.mouseLocation) {
+        if area.contains(NSEvent.mouseLocation) || NSEvent.pressedMouseButtons & 1 != 0 {
             outsideSince = nil
             return
         }

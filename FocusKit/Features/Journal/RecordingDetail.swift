@@ -228,7 +228,7 @@ private struct SmartNotesView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                LinearGradient(colors: [FocusMode.orbit.palette.light, .white.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                LinearGradient(colors: [FocusMode.orbit.palette.light, Palette.surface.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: .rect(cornerRadius: 24)
             )
 
@@ -321,7 +321,7 @@ private struct Flashcard: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 110, alignment: .topLeading)
-        .background(.white.opacity(0.75), in: .rect(cornerRadius: 18))
+        .background(Palette.surface.opacity(0.75), in: .rect(cornerRadius: 18))
         .shadow(color: .black.opacity(0.05), radius: 8, y: 3)
     }
 }
@@ -368,7 +368,7 @@ private struct PolishingBanner: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 38)
-        .background(.white.opacity(0.6), in: .capsule)
+        .background(Palette.surface.opacity(0.6), in: .capsule)
     }
 }
 
@@ -382,7 +382,7 @@ private struct PlayerBar: View {
             } label: {
                 Image(systemName: playback.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Palette.canvas)
                     .contentTransition(.symbolEffect(.replace))
                     .frame(width: 42, height: 42)
                     .background(Palette.ink, in: .circle)
@@ -404,7 +404,7 @@ private struct PlayerBar: View {
         }
         .padding(8)
         .padding(.trailing, 10)
-        .background(.white.opacity(0.6), in: .capsule)
+        .background(Palette.surface.opacity(0.6), in: .capsule)
     }
 }
 

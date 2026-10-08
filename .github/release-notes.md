@@ -1,0 +1,9 @@
+- Dark mode that follows your Mac, with a choice in Settings › Profile
+- A cleaner notch: new Home, Music and Calendar, smoother at 60 fps
+- The player works with any app in Now Playing, not just Spotify and Music
+- File Tray and Clipboard history in the notch
+- Lock screen widgets with a friendly greeting
+- Notices for AirPods, Caps Lock and low battery; volume and brightness redesigned
+- End a session from the notch, and see hours on long timers
+- Settings redesigned, with notch alignment and new options
+- Many fixes, including the play button, lecture names and a launch crash

@@ -5,9 +5,10 @@ struct AmbientBackground: View {
     var intensity: Double = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 12, paused: reduceMotion || !appearsActive)) { context in
+        TimelineView(.animation(minimumInterval: FrameRate.half, paused: reduceMotion || !appearsActive)) { context in
             let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
             MeshGradient(
                 width: 3,
@@ -23,8 +24,13 @@ struct AmbientBackground: View {
     }
 
     private var colors: [Color] {
-        let light = palette.light.opacity(0.55 + 0.45 * intensity)
-        let mid = palette.mid.opacity(0.18 + 0.4 * intensity)
+        let isDark = colorScheme == .dark
+        let light = isDark
+            ? palette.light.mix(with: Palette.canvas, by: 0.55 - 0.25 * intensity)
+            : palette.light.opacity(0.55 + 0.45 * intensity)
+        let mid = isDark
+            ? palette.mid.mix(with: Palette.canvas, by: 0.9 - 0.08 * intensity)
+            : palette.mid.opacity(0.18 + 0.4 * intensity)
         return [
             Palette.canvas, light, Palette.canvas,
             light, mid, Palette.canvas,

@@ -10,7 +10,7 @@ struct CompletionCard: View {
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.25)
+            Palette.surface.opacity(0.25)
                 .ignoresSafeArea()
 
             VStack(spacing: 22) {
@@ -76,7 +76,7 @@ struct CompletionCard: View {
                     .lineLimit(1...3)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
-                    .background(.white.opacity(0.7), in: .rect(cornerRadius: 18))
+                    .background(Palette.surface.opacity(0.7), in: .rect(cornerRadius: 18))
                     .onSubmit { engine.finish(note: note) }
 
                 Button {
@@ -156,7 +156,7 @@ private struct RecordingStatus: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 58)
-        .background(.white.opacity(0.7), in: .rect(cornerRadius: 18))
+        .background(Palette.surface.opacity(0.7), in: .rect(cornerRadius: 18))
         .animation(Motion.standard, value: recorder.state)
         .onAppear { pulses = true }
     }

@@ -64,6 +64,7 @@ struct BreatheScene: View {
                     at: center
                 )
             }
+            .drawingGroup()
         }
         .accessibilityLabel("Break. Follow the circle and breathe slowly.")
     }

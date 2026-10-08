@@ -51,7 +51,7 @@ struct GoalEditor: View {
                                 .frame(width: 26, height: 26)
                                 .overlay {
                                     Circle()
-                                        .strokeBorder(.white, lineWidth: 3)
+                                        .strokeBorder(Palette.surface, lineWidth: 3)
                                         .opacity(goal.tint == tint ? 1 : 0)
                                 }
                                 .shadow(color: tint.color.opacity(goal.tint == tint ? 0.5 : 0), radius: 6, y: 2)

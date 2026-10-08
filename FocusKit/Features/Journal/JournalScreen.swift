@@ -26,6 +26,7 @@ struct JournalScreen: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("Last 7 days")
                                 .font(.rounded(16, weight: .bold))
+                                .foregroundStyle(Palette.ink)
                             WeekChart(days: stats.lastSevenDays)
                                 .frame(height: 170)
                         }
@@ -34,6 +35,7 @@ struct JournalScreen: View {
                         VStack(alignment: .leading, spacing: 16) {
                             Text("By mode")
                                 .font(.rounded(16, weight: .bold))
+                                .foregroundStyle(Palette.ink)
                             ModeBreakdown(minutes: stats.minutesByMode)
                         }
                     }
@@ -45,6 +47,7 @@ struct JournalScreen: View {
                         HStack {
                             Text("Last 20 weeks")
                                 .font(.rounded(16, weight: .bold))
+                                .foregroundStyle(Palette.ink)
                             Spacer()
                             Text("\(stats.completed) completed · \(stats.stopped) ended early")
                                 .font(.rounded(12, weight: .medium))
@@ -98,10 +101,14 @@ struct JournalScreen: View {
                         ForEach(sessions) { session in
                             SessionRow(session: session, goal: library.goal(session.goalID))
                                 .contextMenu {
-                                    Button("Remove from Journal", role: .destructive) { library.delete(session) }
+                                    Button("Remove from Journal", role: .destructive) {
+                                        withAnimation(Motion.standard) { library.delete(session) }
+                                    }
                                 }
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
+                    .animation(Motion.standard, value: sessions.map(\.id))
                 }
             }
         }
@@ -187,7 +194,7 @@ private struct SessionRow: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(.white.opacity(isHovering || isExpanded ? 0.6 : 0), in: .rect(cornerRadius: 18))
+        .background(Palette.surface.opacity(isHovering || isExpanded ? 0.6 : 0), in: .rect(cornerRadius: 18))
         .contentShape(.rect)
         .onTapGesture {
             guard hasDetails else { return }

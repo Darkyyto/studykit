@@ -534,7 +534,7 @@ private struct CustomizeCard: View {
         }
         .padding(24)
         .frame(width: 520)
-        .background(.white, in: .rect(cornerRadius: 26))
+        .background(Palette.surface, in: .rect(cornerRadius: 26))
         .shadow(color: .black.opacity(0.08), radius: 2, y: 1)
         .shadow(color: .black.opacity(0.14), radius: 40, y: 18)
         .animation(Motion.standard, value: kind)

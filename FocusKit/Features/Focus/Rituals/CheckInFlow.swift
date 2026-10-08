@@ -246,11 +246,11 @@ private struct SeatMap: View {
             ScrollView(.horizontal) {
                 ZStack(alignment: .leading) {
                     Wing()
-                        .fill(LinearGradient(colors: [Color(hex: 0xDCE6F2), Color(hex: 0xC6D3E3)], startPoint: .leading, endPoint: .trailing))
+                        .fill(LinearGradient(colors: [Color(light: 0xDCE6F2, dark: 0x2A3342), Color(light: 0xC6D3E3, dark: 0x1E2533)], startPoint: .leading, endPoint: .trailing))
                         .frame(width: 330, height: 470)
                         .offset(x: 540)
                     CabinOutline()
-                        .fill(.white.opacity(0.92))
+                        .fill(Palette.surface.opacity(0.92))
                         .frame(height: 300)
                         .shadow(color: .black.opacity(0.08), radius: 20, y: 8)
 
@@ -276,7 +276,7 @@ private struct SeatMap: View {
                 legend(Color(hex: 0x9EE0C0), "Extra legroom")
                 legend(FocusMode.flight.palette.mid.opacity(0.75), "Available")
                 legend(Palette.ink.opacity(0.08), "Taken")
-                legend(Color(hex: 0xDCE6F2), "Wing view")
+                legend(Color(light: 0xDCE6F2, dark: 0x2A3342), "Wing view")
             }
         }
     }

@@ -370,7 +370,7 @@ struct RecordingsScreen: View {
             }
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(.white.opacity(0.7)), in: .capsule)
+            .background(isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(Palette.surface.opacity(0.7)), in: .capsule)
             .contentShape(.capsule)
         }
         .buttonStyle(.pressable)
@@ -443,7 +443,7 @@ private struct LiveCard: View {
             }
         }
         .padding(20)
-        .background(.white.opacity(0.75), in: .rect(cornerRadius: 22))
+        .background(Palette.surface.opacity(0.75), in: .rect(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Palette.record.opacity(0.18), lineWidth: 1))
         .onAppear { pulses = true }
     }
@@ -523,7 +523,7 @@ private struct RecordingRow<Actions: View>: View {
                 }
             }
             .padding(14)
-            .background(.white.opacity(isHovering ? 0.92 : 0.7), in: .rect(cornerRadius: 20))
+            .background(Palette.surface.opacity(isHovering ? 0.92 : 0.7), in: .rect(cornerRadius: 20))
             .overlay {
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(tint, lineWidth: 2)

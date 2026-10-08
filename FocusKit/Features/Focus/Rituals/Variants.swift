@@ -20,9 +20,9 @@ enum OrbitBody: String, CaseIterable, Identifiable {
 
     var palette: ModePalette {
         switch self {
-        case .moon: ModePalette(light: Color(hex: 0xF1F1F4), mid: Color(hex: 0xC3C6CF), deep: Color(hex: 0x7C8190))
-        case .mars: ModePalette(light: Color(hex: 0xFFE2D3), mid: Color(hex: 0xF0905F), deep: Color(hex: 0xB9452A))
-        case .saturn: ModePalette(light: Color(hex: 0xFBEFD5), mid: Color(hex: 0xE6C27F), deep: Color(hex: 0xA97F33))
+        case .moon: ModePalette(light: Color(light: 0xF1F1F4, dark: 0x1E1F24), mid: Color(hex: 0xC3C6CF), deep: Color(hex: 0x7C8190))
+        case .mars: ModePalette(light: Color(light: 0xFFE2D3, dark: 0x3A2118), mid: Color(hex: 0xF0905F), deep: Color(hex: 0xB9452A))
+        case .saturn: ModePalette(light: Color(light: 0xFBEFD5, dark: 0x352B17), mid: Color(hex: 0xE6C27F), deep: Color(hex: 0xA97F33))
         case .neptune: FocusMode.orbit.palette
         }
     }
@@ -110,7 +110,7 @@ enum SkyKind: String, CaseIterable, Identifiable {
     var water: ModePalette {
         switch self {
         case .day: FocusMode.tide.palette
-        case .sunset: ModePalette(light: Color(hex: 0xFFE3D6), mid: Color(hex: 0x8FB5D6), deep: Color(hex: 0x3F5F9A))
+        case .sunset: ModePalette(light: Color(light: 0xFFE3D6, dark: 0x3A2622), mid: Color(hex: 0x8FB5D6), deep: Color(hex: 0x3F5F9A))
         }
     }
 }

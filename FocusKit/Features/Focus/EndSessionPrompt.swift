@@ -14,7 +14,7 @@ struct EndSessionPrompt: View {
     var body: some View {
         ZStack {
             Rectangle()
-                .fill(.black.opacity(0.08))
+                .fill(Color(light: 0x000000, lightAlpha: 0.08, dark: 0x000000, darkAlpha: 0.35))
                 .ignoresSafeArea()
                 .onTapGesture(perform: keepGoing)
 

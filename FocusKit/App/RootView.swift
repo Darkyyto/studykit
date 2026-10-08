@@ -104,7 +104,6 @@ struct RootView: View {
             withAnimation(Motion.standard) { section = .focus }
         }
         .frame(minWidth: 920, minHeight: 640)
-        .preferredColorScheme(.light)
     }
 
     private var main: some View {
@@ -244,7 +243,7 @@ private struct TabBar: View {
             .background {
                 if isSelected {
                     Capsule()
-                        .fill(.white)
+                        .fill(Palette.surface)
                         .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
                         .matchedGeometryEffect(id: "pill", in: pill)
                 }

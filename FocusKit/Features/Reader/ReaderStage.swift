@@ -59,7 +59,7 @@ struct ReaderStage: View {
                 if let toast {
                     Label(toast, systemImage: "checkmark.circle.fill")
                         .font(.rounded(13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Palette.canvas)
                         .padding(.horizontal, 16)
                         .frame(height: 36)
                         .background(Palette.ink.opacity(0.85), in: .capsule)
@@ -181,7 +181,7 @@ struct ReaderStage: View {
                 .foregroundStyle(Palette.ink)
                 .contentTransition(.symbolEffect(.replace))
                 .frame(width: 34, height: 34)
-                .background(.white.opacity(0.6), in: .circle)
+                .background(Palette.surface.opacity(0.6), in: .circle)
                 .contentShape(.circle)
         }
         .buttonStyle(.pressable)

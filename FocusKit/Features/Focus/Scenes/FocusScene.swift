@@ -5,8 +5,17 @@ extension EnvironmentValues {
 }
 
 enum FrameRate {
+    static let full = 1.0 / 64
+    static let half = 1.0 / 32
+    static let quarter = 1.0 / 16
+
     static func interval(active: Bool) -> Double {
-        active ? 1.0 / 60 : 1.0 / 8
+        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+        switch (active, lowPower) {
+        case (true, false): return full
+        case (false, true): return quarter
+        default: return half
+        }
     }
 }
 
@@ -50,6 +59,7 @@ struct FocusScene: View {
                     )
                 )
                 scene(state)
+                    .drawingGroup()
             }
         }
         .accessibilityElement()

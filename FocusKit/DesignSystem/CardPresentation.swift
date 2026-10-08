@@ -53,7 +53,7 @@ private struct CardPresentation<Item: Identifiable, Card: View>: ViewModifier {
                         .transition(.opacity)
 
                     card(value)
-                        .background(.white, in: .rect(cornerRadius: 32))
+                        .background(Palette.surface, in: .rect(cornerRadius: 32))
                         .clipShape(.rect(cornerRadius: 32))
                         .shadow(color: .black.opacity(0.12), radius: 40, y: 20)
                         .environment(\.closeCard, CloseCardAction { [binding = $item] in binding.wrappedValue = nil })

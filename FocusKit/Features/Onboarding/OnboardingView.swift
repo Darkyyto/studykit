@@ -66,7 +66,6 @@ struct OnboardingView: View {
             }
         }
         .animation(Motion.morph, value: step)
-        .preferredColorScheme(.light)
         .onAppear {
             guard isReplay else { return }
             persona = storedPersona
@@ -171,7 +170,7 @@ struct OnboardingView: View {
                         .foregroundStyle(isPicked ? .white : Palette.ink)
                         .padding(.horizontal, 16)
                         .frame(height: 40)
-                        .background(isPicked ? AnyShapeStyle(palette.deep) : AnyShapeStyle(.white.opacity(0.55)), in: .capsule)
+                        .background(isPicked ? AnyShapeStyle(palette.deep) : AnyShapeStyle(Palette.surface.opacity(0.55)), in: .capsule)
                         .contentShape(.capsule)
                     }
                     .buttonStyle(.pressable)
@@ -256,7 +255,7 @@ struct OnboardingView: View {
                         .foregroundStyle(isSelected ? .white : Palette.ink)
                         .padding(.horizontal, 18)
                         .frame(width: 210, height: 60, alignment: .leading)
-                        .background(isSelected ? AnyShapeStyle(selectedMode.palette.deep) : AnyShapeStyle(.white.opacity(0.55)), in: .rect(cornerRadius: 20))
+                        .background(isSelected ? AnyShapeStyle(selectedMode.palette.deep) : AnyShapeStyle(Palette.surface.opacity(0.55)), in: .rect(cornerRadius: 20))
                         .contentShape(.rect(cornerRadius: 20))
                     }
                     .buttonStyle(.pressable)
@@ -453,7 +452,7 @@ private struct OrbitingModes: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 60, paused: reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: FrameRate.full, paused: reduceMotion)) { context in
             let angle = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate * 0.25
             ZStack {
                 Circle()

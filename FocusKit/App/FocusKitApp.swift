@@ -114,23 +114,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.object(forKey: Preference.keepsRunning) as? Bool ?? true
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        Appearance.current.apply()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.set(true, forKey: Preference.mainWindowOpen)
         let center = NotificationCenter.default
         center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
-            let isMain = (note.object as? NSWindow)?.identifier?.rawValue.hasPrefix("main") == true
-            MainActor.assumeIsolated { if isMain { AppDelegate.mainWindowClosed() } }
+            let window = note.object as? NSWindow
+            MainActor.assumeIsolated {
+                if AppDelegate.isMain(window) { AppDelegate.mainWindowClosed() }
+            }
         }
         center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
-            let isMain = (note.object as? NSWindow)?.identifier?.rawValue.hasPrefix("main") == true
+            let window = note.object as? NSWindow
             MainActor.assumeIsolated {
-                guard isMain else { return }
+                guard AppDelegate.isMain(window) else { return }
                 UserDefaults.standard.set(true, forKey: Preference.mainWindowOpen)
                 if NSApp.activationPolicy() != .regular {
                     NSApp.setActivationPolicy(.regular)
                 }
             }
         }
+    }
+
+    @MainActor
+    private static func isMain(_ window: NSWindow?) -> Bool {
+        window?.identifier?.rawValue.hasPrefix("main") == true
     }
 
     private static func mainWindowClosed() {

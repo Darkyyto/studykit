@@ -58,13 +58,23 @@ Lecture and Meeting sessions record while you focus. The live transcript appears
 
 On Macs with a notch, FocusKit lives in it and grows out of it. While a session runs or music plays, the time left and the song appear on either side of the camera, and a new song, a break or a finished session slides in beside it without covering the screen. Move the pointer to the top of the screen and it opens:
 
-- **Home** – how long you have focused today, your streak and the last seven days, a tap to start any mode, and either the song playing or the time and your next event.
-- **Music** – the cover, the time left in the song and the controls over a backdrop taken from the artwork, or a quick way to start Spotify or Music.
-- **Calendar** – the month with a dot for each calendar, and the selected day's events on a timeline, with the one happening now highlighted.
+- **Home** – how long you have focused today, your streak and the last seven days, a tap to start any mode, or the session running with its controls, next to the song playing or the time and your next event.
+- **Music** – the cover, the song, a bar you can drag to move through it and the controls. It works with Spotify, Music and any app that shows in Control Center's Now Playing, such as Safari, Chrome, Podcasts or VLC.
+- **Calendar** – today in large type, the day's events (or tomorrow's when today is clear) and a small month to pick another day.
+- **Tray** – drag files onto the notch to keep them close. Drag them back out wherever you need them, or AirDrop and share them.
+- **Clipboard** – the last 40 things you copied, ready to copy again with a click. It is off until you turn it on, never keeps passwords and is cleared when FocusKit quits.
 
-Volume, brightness and charging show up in the notch too, as a slim bar on either side of the camera. Turn on **Replace the macOS indicators** in Settings › Notch and FocusKit handles the volume and brightness keys itself, so only the notch appears. This needs the Accessibility permission, asked once.
+Volume, brightness and charging show up in the notch too, as a slim bar on either side of the camera, along with AirPods connecting, Caps Lock and low battery. Turn on **Replace the macOS indicators** in Settings › Notch and FocusKit handles the volume and brightness keys itself, so only the notch appears. This needs the Accessibility permission, asked once.
 
-At rest the notch matches your Mac's own, so nothing shows until something happens. Choose when it appears in **Settings › Notch**.
+At rest the notch matches your Mac's own, so nothing shows until something happens. Choose when it appears, line it up with your Mac's notch and pick which notices to see in **Settings › Notch**.
+
+## Lock screen
+
+When your Mac is locked, FocusKit can show a friendly greeting, your session, battery, headphones, your next event and the song playing below the clock. The widgets never take clicks and disappear the moment you unlock. Choose them, and a Glass or Clear look, in **Settings › Lock Screen**.
+
+## Appearance
+
+FocusKit follows your Mac's light or dark appearance. To keep it always light or always dark, choose in **Settings › Profile**.
 
 ## Menu bar
 
@@ -86,7 +96,17 @@ Closing the window does not quit the app. FocusKit leaves the Dock and keeps run
 
 ## Privacy
 
-There is no account, no analytics and no server. Your library, recordings and settings stay on this Mac. Speech recognition, notes and flashcards run on device. FocusKit only goes online to load map imagery for Flight, which Apple Maps provides, and to check GitHub for a new version, which you can turn off in Settings › Updates.
+There is no account, no analytics and no server. Nothing about you, your sessions or your recordings ever leaves this Mac. Your library, recordings and settings are stored locally, and speech recognition, notes and flashcards run on device.
+
+FocusKit goes online for three things only:
+
+- map imagery for Flight, which Apple Maps provides;
+- the cover of the song playing in Spotify, downloaded from Spotify's image server like Spotify itself does;
+- checking GitHub for a new version, which you can turn off in Settings › Updates.
+
+What the notch and the lock screen show, such as the song playing, your calendar, your battery and your headphones, is read on this Mac only to display it to you, and is never stored or sent anywhere.
+
+Recordings are your responsibility: record lectures and meetings only where you are allowed to, and ask first when in doubt.
 
 ## Building
 

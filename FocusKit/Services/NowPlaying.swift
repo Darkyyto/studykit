@@ -26,7 +26,13 @@ final class NowPlaying {
         let position: TimeInterval?
     }
 
+    struct Source: Equatable, Sendable {
+        let bundleID: String
+        let name: String
+    }
+
     private(set) var player: Player?
+    private(set) var source: Source?
     private(set) var title = ""
     private(set) var artist = ""
     private(set) var isPlaying = false
@@ -38,7 +44,11 @@ final class NowPlaying {
     @ObservationIgnored private var positionDate = Date.now
     @ObservationIgnored private var trackKey = ""
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
-    @ObservationIgnored private var hasQueried = false
+    @ObservationIgnored private var lastSync = Date.distantPast
+    @ObservationIgnored private var resync: Task<Void, Never>?
+    @ObservationIgnored private let bridge = MediaBridge()
+    @ObservationIgnored private var expectedPlaying: Bool?
+    @ObservationIgnored private var expectationEnds = Date.distantPast
 
     init() {
         let center = DistributedNotificationCenter.default()
@@ -52,10 +62,20 @@ final class NowPlaying {
                 MainActor.assumeIsolated { self?.apply(update) }
             },
         ]
+        bridge.onUpdate = { [weak self] snapshot in self?.apply(snapshot) }
+        bridge.start()
     }
 
     var hasTrack: Bool {
-        player != nil && !title.isEmpty
+        (player != nil || source != nil) && !title.isEmpty
+    }
+
+    var appName: String {
+        player?.scriptName ?? source?.name ?? ""
+    }
+
+    var appBundleID: String? {
+        player?.rawValue ?? source?.bundleID
     }
 
     func elapsed(at date: Date) -> TimeInterval {
@@ -64,8 +84,13 @@ final class NowPlaying {
     }
 
     func refreshIfNeeded() {
-        guard !hasQueried else { return }
-        hasQueried = true
+        sync()
+    }
+
+    func sync(force: Bool = false) {
+        guard force || Date.now.timeIntervalSince(lastSync) > 1.5 else { return }
+        lastSync = .now
+        var found: [Update] = []
         for candidate in [Player.spotify, .music] where Self.isRunning(candidate) {
             let script = """
                 tell application "\(candidate.scriptName)"
@@ -79,7 +104,7 @@ final class NowPlaying {
             let parts = result.components(separatedBy: "\t")
             guard parts.count >= 5 else { continue }
             let rawDuration = Double(parts[3].replacingOccurrences(of: ",", with: ".")) ?? 0
-            apply(Update(
+            found.append(Update(
                 player: candidate,
                 title: parts[0],
                 artist: parts[1],
@@ -87,23 +112,73 @@ final class NowPlaying {
                 duration: candidate == .spotify ? rawDuration / 1000 : rawDuration,
                 position: Double(parts[4].replacingOccurrences(of: ",", with: "."))
             ))
-            return
+        }
+        let chosen = found.first { $0.state == "Playing" } ?? found.first { $0.player == player } ?? found.first
+        if let chosen {
+            apply(chosen, force: true)
         }
     }
 
     func togglePlayback() {
-        command("playpause")
-        isPlaying.toggle()
         position = elapsed(at: .now)
         positionDate = .now
+        if player != nil {
+            command("playpause")
+        } else if source != nil {
+            bridge.send(.togglePlayPause)
+        }
+        isPlaying.toggle()
+        expectedPlaying = isPlaying
+        expectationEnds = .now.addingTimeInterval(1.2)
+        resyncSoon()
+    }
+
+    private func contradictsExpectation(_ playing: Bool) -> Bool {
+        guard let expectedPlaying, Date.now < expectationEnds else {
+            expectedPlaying = nil
+            return false
+        }
+        return playing != expectedPlaying
     }
 
     func next() {
-        command("next track")
+        if player != nil {
+            command("next track")
+        } else if source != nil {
+            bridge.send(.next)
+        }
+        resyncSoon()
     }
 
     func previous() {
-        command("previous track")
+        if player != nil {
+            command("previous track")
+        } else if source != nil {
+            bridge.send(.previous)
+        }
+        resyncSoon()
+    }
+
+    func seek(to fraction: Double) {
+        guard duration > 0 else { return }
+        let target = min(duration, max(0, duration * fraction))
+        if player != nil {
+            command("set player position to \(String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), target))")
+        } else if source != nil {
+            bridge.seek(to: target)
+        }
+        position = target
+        positionDate = .now
+        resyncSoon()
+    }
+
+    private func resyncSoon() {
+        resync?.cancel()
+        resync = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(1300))
+            guard !Task.isCancelled else { return }
+            self?.sync(force: true)
+        }
     }
 
     static func isInstalled(_ player: Player) -> Bool {
@@ -124,7 +199,8 @@ final class NowPlaying {
     }
 
     func open() {
-        guard let player, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue) else { return }
+        guard let bundleID = appBundleID, !bundleID.isEmpty,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
@@ -133,8 +209,14 @@ final class NowPlaying {
         Self.run("tell application \"\(player.scriptName)\" to \(verb)")
     }
 
-    private func apply(_ update: Update?) {
+    private func apply(_ update: Update?, force: Bool = false) {
         guard let update else { return }
+        if update.player == player, contradictsExpectation(update.state == "Playing") {
+            return
+        }
+        if !force, isPlaying, update.state != "Playing", source != nil || (player != nil && player != update.player) {
+            return
+        }
         if update.state == "Stopped" || update.title.isEmpty {
             if player == update.player {
                 player = nil
@@ -144,22 +226,72 @@ final class NowPlaying {
             }
             return
         }
-        player = update.player
-        title = update.title
-        artist = update.artist
-        isPlaying = update.state == "Playing"
-        duration = update.duration
+        let sameTrack = player == update.player && title == update.title && artist == update.artist
+        let current = elapsed(at: .now)
         if let value = update.position {
             position = value
         } else if update.player == .music, let value = Self.run("tell application \"Music\" to player position")?.doubleValue {
             position = value
+        } else {
+            position = sameTrack ? current : 0
         }
         positionDate = .now
+        player = update.player
+        source = nil
+        title = update.title
+        artist = update.artist
+        isPlaying = update.state == "Playing"
+        duration = update.duration
 
         let key = "\(update.player.rawValue)|\(update.title)|\(update.artist)"
         guard key != trackKey else { return }
         trackKey = key
         loadArtwork(for: update.player, key: key)
+    }
+
+    private func apply(_ snapshot: MediaBridge.Snapshot) {
+        if Player(rawValue: snapshot.bundleID) != nil {
+            return
+        }
+        guard !snapshot.title.isEmpty else {
+            if source != nil {
+                source = nil
+                title = ""
+                artist = ""
+                isPlaying = false
+                artwork = nil
+                trackKey = ""
+            }
+            return
+        }
+        if player != nil, isPlaying, !snapshot.isPlaying {
+            return
+        }
+        if source?.bundleID == snapshot.bundleID, contradictsExpectation(snapshot.isPlaying) {
+            return
+        }
+        let name = snapshot.app.isEmpty ? (snapshot.bundleID.isEmpty ? "Now Playing" : snapshot.bundleID) : snapshot.app
+        player = nil
+        source = Source(bundleID: snapshot.bundleID, name: name)
+        title = snapshot.title
+        artist = snapshot.artist
+        isPlaying = snapshot.isPlaying
+        duration = snapshot.duration
+        position = snapshot.elapsed + (snapshot.isPlaying ? max(0, Date.now.timeIntervalSince(snapshot.timestamp)) : 0)
+        positionDate = .now
+
+        let key = "\(snapshot.bundleID)|\(snapshot.title)|\(snapshot.artist)"
+        if let data = snapshot.artwork, key != trackKey || artwork == nil, let image = NSImage(data: data) {
+            trackKey = key
+            withAnimation(Motion.standard) {
+                artwork = image
+                accent = Self.averageColor(of: image) ?? Color(white: 0.85)
+            }
+        } else if key != trackKey {
+            trackKey = key
+            artwork = nil
+            accent = Color(white: 0.85)
+        }
     }
 
     private func loadArtwork(for player: Player, key: String) {

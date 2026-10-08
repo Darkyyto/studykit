@@ -22,7 +22,6 @@ struct ModeLauncher: View {
                         Circle()
                             .strokeBorder(.white.opacity(isCurrent ? 0.7 : 0.15), lineWidth: isCurrent ? 1.5 : 0.5)
                     }
-                    .shadow(color: mode.palette.deep.opacity(isHovering ? 0.6 : 0.3), radius: isHovering ? 10 : 5, y: 2)
                     .scaleEffect(isHovering ? 1.08 : 1)
                 Text(mode.title)
                     .font(.rounded(10, weight: .semibold))

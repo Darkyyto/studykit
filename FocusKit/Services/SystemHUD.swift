@@ -34,11 +34,14 @@ final class SystemHUD {
     @ObservationIgnored private let writeBrightness: (@convention(c) (UInt32, Float) -> Int32)?
     @ObservationIgnored private var keyTap: CFMachPort?
     @ObservationIgnored private var keySource: CFRunLoopSource?
+    @ObservationIgnored private var keyMonitors: [Any] = []
+    @ObservationIgnored private var lastBrightnessKey = Date.distantPast
 
     private(set) var replacesSystemIndicators = false
 
     static let enabledKey = "showsSystemHUD"
     static let replaceKey = "replacesSystemHUD"
+    static let automaticBrightnessKey = "showsAutomaticBrightness"
 
     var wantsReplacement: Bool {
         UserDefaults.standard.bool(forKey: Self.replaceKey)
@@ -73,6 +76,7 @@ final class SystemHUD {
             MainActor.assumeIsolated { self?.pollBrightness() }
         }
         brightnessTimer?.tolerance = 0.1
+        watchBrightnessKeys()
         lastCharging = Self.batteryState()?.charging
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ context in
@@ -170,6 +174,7 @@ final class SystemHUD {
         case 2, 3:
             guard let writeBrightness, let current = brightness() else { return false }
             if isDown {
+                lastBrightnessKey = .now
                 let target = min(1, max(0, current + (code == 2 ? step : -step)))
                 _ = writeBrightness(CGMainDisplayID(), Float(target))
                 publish(.brightness, value: target)
@@ -283,8 +288,32 @@ final class SystemHUD {
     private func pollBrightness() {
         guard let value = brightness() else { return }
         defer { lastBrightness = value }
-        guard let last = lastBrightness, abs(value - last) > 0.004 else { return }
+        guard let last = lastBrightness else { return }
+        let delta = abs(value - last)
+        guard delta > 0.004 else { return }
+        let isManual = Date.now.timeIntervalSince(lastBrightnessKey) < 1.2 || delta >= 0.05
+        guard isManual || UserDefaults.standard.bool(forKey: Self.automaticBrightnessKey) else { return }
         publish(.brightness, value: value)
+    }
+
+    private func watchBrightnessKeys() {
+        let global = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] event in
+            let isBrightness = Self.isBrightnessKey(event)
+            MainActor.assumeIsolated {
+                if isBrightness { self?.lastBrightnessKey = .now }
+            }
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] event in
+            if Self.isBrightnessKey(event) { self?.lastBrightnessKey = .now }
+            return event
+        }
+        keyMonitors = [global, local].compactMap { $0 }
+    }
+
+    private nonisolated static func isBrightnessKey(_ event: NSEvent) -> Bool {
+        guard event.subtype.rawValue == 8 else { return false }
+        let code = (event.data1 & 0xFFFF0000) >> 16
+        return code == 2 || code == 3
     }
 
     private func powerChanged() {

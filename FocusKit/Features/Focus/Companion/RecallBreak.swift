@@ -71,7 +71,7 @@ struct RecallBreak: View {
         }
         .padding(24)
         .frame(width: 520, height: 230, alignment: .topLeading)
-        .background(.white.opacity(0.85), in: .rect(cornerRadius: 28))
+        .background(Palette.surface.opacity(0.85), in: .rect(cornerRadius: 28))
         .shadow(color: .black.opacity(0.08), radius: 20, y: 10)
     }
 
@@ -117,7 +117,7 @@ struct RecallBreak: View {
         }
         .padding(24)
         .frame(width: 420)
-        .background(.white.opacity(0.75), in: .rect(cornerRadius: 28))
+        .background(Palette.surface.opacity(0.75), in: .rect(cornerRadius: 28))
     }
 
     private func next(knewIt: Bool) {

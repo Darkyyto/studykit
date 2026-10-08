@@ -3,6 +3,9 @@ import SwiftUI
 struct IslandView: View {
     let controller: IslandController
     let calendar: CalendarStore
+    let tray: FileTray
+    let devices: DeviceWatcher
+    let clipboard: ClipboardHistory
     let systemHUD: SystemHUD
     @Environment(FocusEngine.self) private var engine
     @Environment(VoiceRecorder.self) private var recorder
@@ -13,6 +16,10 @@ struct IslandView: View {
     @AppStorage(Preference.persona) private var persona = Persona.personal
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
     @AppStorage(Preference.name) private var name = ""
+    @AppStorage(FileTray.enabledKey) private var showsTray = true
+    @State private var isDropTargeted = false
+    @State private var confirmsEnd = false
+    @State private var endReset: Task<Void, Never>?
     @Namespace private var tabs
 
     private var soundscapeKind: Soundscape.Kind? {
@@ -38,7 +45,11 @@ struct IslandView: View {
                 .opacity(controller.isVisible ? 1 : 0)
         }
         .frame(width: IslandController.canvas.width, height: IslandController.canvas.height)
+        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: controller.wing)
+        .animation(.spring(response: 0.42, dampingFraction: 0.88), value: controller.tab)
+        .animation(.spring(response: 0.42, dampingFraction: 0.9), value: controller.hasActivity)
         .environment(\.colorScheme, .dark)
+        .environment(\.appearsActive, true)
         .onChange(of: engine.segmentIndex) { _, _ in announceSegment() }
         .onChange(of: engine.phase.isComplete) { _, done in
             if done { controller.announce("Complete", detail: completionText, symbol: "checkmark", tint: tint) }
@@ -56,6 +67,10 @@ struct IslandView: View {
         .onChange(of: nowPlaying.isPlaying) { _, _ in controller.refresh() }
         .onChange(of: soundscapeKind, initial: true) { _, kind in soundscape.sync(kind: kind) }
         .onChange(of: soundscape.isEnabled) { _, _ in soundscape.sync(kind: soundscapeKind) }
+        .onChange(of: devices.notice) { _, notice in
+            guard let notice else { return }
+            controller.announce(notice.title, detail: notice.detail, symbol: notice.symbol, tint: notice.tint, fromSystem: true)
+        }
         .onChange(of: systemHUD.event) { _, event in
             if event != nil { controller.showSystemHUD() }
         }
@@ -63,7 +78,15 @@ struct IslandView: View {
             if controller.tab == .calendar { await calendar.prepare() }
         }
         .onChange(of: controller.shape) { _, shape in
-            if shape == .expanded { calendar.refresh() }
+            if shape != .expanded { cancelEnd() }
+            if shape == .expanded {
+                clipboard.refreshAccess()
+                calendar.refresh()
+                tray.prune()
+            }
+        }
+        .onChange(of: showsTray) { _, shows in
+            if !shows, controller.tab == .tray { controller.tab = .home }
         }
     }
 
@@ -78,6 +101,7 @@ struct IslandView: View {
                 ))
         case .peek:
             peek
+                .animation(.easeOut(duration: 0.2), value: controller.announcement)
                 .transition(.blurReplace.animation(.easeOut(duration: 0.18)))
         case .compact:
             compact
@@ -99,6 +123,8 @@ struct IslandView: View {
                 case .home: home
                 case .music: musicTab
                 case .calendar: calendarTab
+                case .tray: trayTab
+                case .clipboard: clipboardTab
                 }
             }
             .transition(.asymmetric(
@@ -112,6 +138,30 @@ struct IslandView: View {
             .frame(maxHeight: .infinity, alignment: .top)
         }
         .animation(.spring(response: 0.36, dampingFraction: 0.9), value: controller.tab)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [7, 5]))
+                    .background(Color.accentColor.opacity(0.08), in: .rect(cornerRadius: 22, style: .continuous))
+                    .padding(.horizontal, 8)
+                    .padding(.top, controller.notch.height + 2)
+                    .padding(.bottom, 8)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+        .dropDestination(for: URL.self) { urls, _ in
+            guard showsTray else { return false }
+            withAnimation(.spring(response: 0.36, dampingFraction: 0.85)) {
+                tray.add(urls)
+                controller.tab = .tray
+            }
+            return true
+        } isTargeted: { targeted in
+            isDropTargeted = targeted && showsTray
+            if targeted, showsTray { controller.tab = .tray }
+        }
     }
 
     private var header: some View {
@@ -120,6 +170,10 @@ struct IslandView: View {
                 tabButton(.home, symbol: "house.fill", help: "Home")
                 tabButton(.music, symbol: "music.note", help: "Music")
                 tabButton(.calendar, symbol: "calendar", help: "Calendar")
+                if showsTray {
+                    tabButton(.tray, symbol: tray.items.isEmpty ? "tray" : "tray.full.fill", help: "Tray")
+                }
+                tabButton(.clipboard, symbol: "list.clipboard", help: "Clipboard")
             }
             .padding(3)
             .background(.white.opacity(0.06), in: .capsule)
@@ -127,7 +181,7 @@ struct IslandView: View {
             Spacer(minLength: max(controller.notch.width, 100))
             HStack(spacing: 10) {
                 Text(Date.now.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
-                    .font(.rounded(11, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.55))
                 iconButton("arrow.up.forward.app", help: "Open FocusKit", size: 24) { controller.openApp() }
             }
@@ -138,12 +192,12 @@ struct IslandView: View {
     private func tabButton(_ tab: IslandController.Tab, symbol: String, help: String) -> some View {
         let isSelected = controller.tab == tab
         return Button {
-            controller.tab = tab
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { controller.tab = tab }
         } label: {
             Image(systemName: symbol)
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(isSelected ? .white : .white.opacity(0.45))
-                .frame(width: 30, height: 20)
+                .frame(width: 28, height: 20)
                 .background {
                     if isSelected {
                         Capsule()
@@ -158,7 +212,7 @@ struct IslandView: View {
     }
 
     private var home: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 0) {
             Group {
                 if controller.isBusy {
                     sessionCard
@@ -166,8 +220,13 @@ struct IslandView: View {
                     todayCard
                 }
             }
-            .frame(width: 270)
-
+            .frame(width: 250)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            Rectangle()
+                .fill(.white.opacity(0.09))
+                .frame(width: 1)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
             Group {
                 if nowPlaying.hasTrack {
                     musicCard
@@ -175,9 +234,10 @@ struct IslandView: View {
                     agendaCard
                 }
             }
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxHeight: .infinity)
+        .padding(.horizontal, 8)
+        .padding(.top, 6)
     }
 
     private var todayCard: some View {
@@ -185,41 +245,37 @@ struct IslandView: View {
         let week = stats.lastSevenDays.map { $0.minutes.values.reduce(0, +) }
         let today = (week.last ?? 0) * 60
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(greeting)
-                        .font(.rounded(11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .lineLimit(1)
-                    Text(today > 0 ? today.compactDuration : "0 min")
-                        .font(.numeric(25, weight: .bold))
-                        .foregroundStyle(.white)
-                    HStack(spacing: 4) {
-                        Image(systemName: "flame.fill")
-                        Text(stats.streak > 0 ? "\(stats.streak) day streak" : "Focused today")
-                    }
-                    .font(.rounded(10.5, weight: .semibold))
-                    .foregroundStyle(stats.streak > 0 ? Palette.rest.mid : .white.opacity(0.4))
-                }
-                Spacer(minLength: 0)
+            Text(greeting)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+                .lineLimit(1)
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(today > 0 ? today.compactDuration : "0 min")
+                    .font(.system(size: 30, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                Text("today")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+            HStack(spacing: 10) {
                 WeekBars(minutes: week, tint: mode.palette.mid)
-                    .frame(width: 74, height: 44)
-                    .padding(.top, 4)
+                    .frame(width: 70, height: 16)
+                if stats.streak > 0 {
+                    Label("\(stats.streak) day streak", systemImage: "flame.fill")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Palette.rest.mid)
+                }
             }
-            Spacer(minLength: 8)
-            HStack(spacing: 4) {
+            .padding(.top, 2)
+            Spacer(minLength: 10)
+            HStack(spacing: 8) {
                 ForEach(FocusMode.allCases) { item in
-                    ModeLauncher(mode: item, isCurrent: item == mode) { start(item) }
+                    ModeTile(mode: item, isCurrent: item == mode) { start(item) }
                 }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background {
-            RadialGradient(colors: [mode.palette.deep.opacity(0.4), .clear], center: .topTrailing, startRadius: 0, endRadius: 240)
-                .animation(.easeInOut(duration: 0.5), value: mode)
-        }
-        .notchCard()
+        .padding(.vertical, 4)
     }
 
     private var greeting: String {
@@ -230,235 +286,340 @@ struct IslandView: View {
 
     private var sessionCard: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            VStack(alignment: .leading, spacing: 8) {
+            let progress = sessionProgress(at: context.date)
+            VStack(alignment: .leading, spacing: 0) {
                 Label(caption, systemImage: symbol)
-                    .font(.rounded(11, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(tint)
                     .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .frame(height: 22)
-                    .background(.black.opacity(0.35), in: .capsule)
-                Spacer(minLength: 0)
-                HStack(alignment: .center, spacing: 8) {
+                HStack(alignment: .center, spacing: 12) {
                     Text(time(at: context.date))
-                        .font(.numeric(30, weight: .bold))
+                        .font(.system(size: 34, weight: .semibold))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .foregroundStyle(.white)
                         .contentTransition(.numericText(countsDown: !recorder.isActive))
                         .animation(Motion.quick, value: time(at: context.date))
-                        .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
                     Spacer(minLength: 0)
-                    sessionControls
+                    ZStack {
+                        Circle()
+                            .stroke(.white.opacity(0.12), lineWidth: 4)
+                        Circle()
+                            .trim(from: 0, to: progress)
+                            .stroke(tint, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .animation(.linear(duration: 1), value: progress)
+                        Image(systemName: symbol)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(tint)
+                    }
+                    .frame(width: 46, height: 46)
                 }
-                ProgressLine(value: sessionProgress(at: context.date), tint: .white)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background {
+                Spacer(minLength: 8)
                 ZStack {
-                    thumbnail
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black.opacity(0.25), location: 0),
-                            .init(color: .clear, location: 0.35),
-                            .init(color: .black.opacity(0.7), location: 1),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    if confirmsEnd, engine.isActive {
+                        endConfirmation
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    } else {
+                        sessionControls
+                            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    }
                 }
+                .frame(height: 34)
+                .animation(.spring(response: 0.3, dampingFraction: 0.88), value: confirmsEnd)
             }
-            .notchCard()
+            .padding(.vertical, 4)
         }
     }
 
     @ViewBuilder
     private var sessionControls: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 2) {
             if engine.isActive {
-                iconButton("forward.end.fill", help: engine.isResting ? "Skip break" : "Skip round", size: 28) { engine.skip() }
-                iconButton(engine.isPaused ? "play.fill" : "pause.fill", help: engine.isPaused ? "Resume" : "Pause", size: 34, highlighted: true) {
+                glyphButton(engine.isPaused ? "play.fill" : "pause.fill", size: 21, help: engine.isPaused ? "Resume" : "Pause") {
                     withAnimation(Motion.morph) { engine.togglePause() }
                 }
-                iconButton(soundscape.isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill", help: soundscape.isEnabled ? "Mute soundscape" : "Play soundscape", size: 28) {
+                glyphButton("forward.end.fill", size: 16, help: engine.isResting ? "Skip break" : "Skip round") { engine.skip() }
+                glyphButton(soundscape.isEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill", size: 15, dim: true, help: soundscape.isEnabled ? "Mute soundscape" : "Play soundscape") {
                     soundscape.isEnabled.toggle()
                 }
+                Spacer(minLength: 0)
+                glyphButton("stop.fill", size: 15, dim: true, help: "End session") { askToEnd() }
             } else if recorder.isActive {
-                iconButton("stop.fill", help: "Stop and save the recording", size: 34, highlighted: true) {
+                glyphButton("stop.fill", size: 20, help: "Stop and save the recording") {
                     recorder.stopNow(engine: engine, enhancer: enhancer, persona: persona)
                 }
+                Spacer(minLength: 0)
             } else {
-                iconButton("checkmark", help: "See summary", size: 34, highlighted: true) { controller.openApp() }
+                glyphButton("checkmark", size: 20, help: "See summary") { controller.openApp() }
+                Spacer(minLength: 0)
             }
+        }
+        .padding(.leading, -8)
+    }
+
+    private var endConfirmation: some View {
+        HStack(spacing: 8) {
+            Text("End session?")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .fixedSize()
+            Spacer(minLength: 0)
+            Button {
+                cancelEnd()
+            } label: {
+                Text("Cancel")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .background(.white.opacity(0.18), in: .capsule)
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(.pressable)
+            Button {
+                cancelEnd()
+                engine.stop()
+            } label: {
+                Text("End")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                    .fixedSize()
+                    .padding(.horizontal, 14)
+                    .frame(height: 30)
+                    .background(Palette.record, in: .capsule)
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(.pressable)
         }
     }
 
+    private func askToEnd() {
+        confirmsEnd = true
+        endReset?.cancel()
+        endReset = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            confirmsEnd = false
+        }
+    }
+
+    private func cancelEnd() {
+        endReset?.cancel()
+        confirmsEnd = false
+    }
+
     private var musicCard: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    artwork(size: 46, radius: 10)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(nowPlaying.title)
-                            .font(.rounded(13, weight: .bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                        Text(nowPlaying.artist)
-                            .font(.rounded(11.5, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    Equalizer(tint: nowPlaying.accent, isPlaying: nowPlaying.isPlaying)
-                        .frame(width: 14, height: 14)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                artwork(size: 48, radius: 11)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(nowPlaying.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                    Text(nowPlaying.artist)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
-                Spacer(minLength: 6)
-                if nowPlaying.duration > 0 {
-                    ProgressLine(value: nowPlaying.elapsed(at: context.date) / nowPlaying.duration, tint: .white.opacity(0.9))
-                }
-                Spacer(minLength: 6)
-                playbackControls(small: 28, large: 34)
-                    .frame(maxWidth: .infinity)
+                .lineLimit(1)
+                Spacer(minLength: 0)
+                Equalizer(tint: nowPlaying.accent, isPlaying: nowPlaying.isPlaying)
+                    .frame(width: 14, height: 12)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background { ArtworkBackdrop(artwork: nowPlaying.artwork, accent: nowPlaying.accent) }
-            .notchCard()
+            Spacer(minLength: 8)
+            Scrubber(nowPlaying: nowPlaying, height: 4)
+            Spacer(minLength: 4)
+            HStack(spacing: 18) {
+                glyphButton("backward.fill", size: 16, help: "Previous") { nowPlaying.previous() }
+                glyphButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 23, help: nowPlaying.isPlaying ? "Pause" : "Play") {
+                    nowPlaying.togglePlayback()
+                }
+                glyphButton("forward.fill", size: 16, help: "Next") { nowPlaying.next() }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.vertical, 4)
+        .task { await keepInSync() }
+    }
+
+    private func keepInSync() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            nowPlaying.sync()
         }
     }
 
     private var agendaCard: some View {
         TimelineView(.everyMinute) { context in
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline) {
                     Text(context.date.formatted(date: .omitted, time: .shortened))
-                        .font(.numeric(22, weight: .bold))
+                        .font(.system(size: 30, weight: .semibold))
+                        .monospacedDigit()
                         .foregroundStyle(.white)
                     Spacer()
                     Button {
-                        controller.tab = .calendar
+                        withAnimation(.spring(response: 0.42, dampingFraction: 0.88)) { controller.tab = .calendar }
                     } label: {
-                        HStack(spacing: 3) {
-                            Text(context.date.formatted(.dateTime.weekday(.wide)))
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 8, weight: .bold))
-                        }
-                        .font(.rounded(11, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .contentShape(.rect)
+                        Text(context.date.formatted(.dateTime.weekday(.abbreviated).day()).uppercased())
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color(hex: 0xFF453A))
                     }
-                    .buttonStyle(.pressable)
+                    .buttonStyle(.plain)
                     .help("Calendar")
                 }
+                Spacer(minLength: 8)
                 switch calendar.access {
                 case .granted:
                     if let next = calendar.upcoming.first {
-                        NextEvent(event: next, now: context.date)
+                        sectionLabel(next.start <= context.date ? "NOW" : "UP NEXT")
+                            .padding(.bottom, 5)
+                        EventBlock(event: next)
                         if calendar.upcoming.count > 1 {
-                            let then = calendar.upcoming[1]
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(then.color)
-                                    .frame(width: 5, height: 5)
-                                Text(then.title)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text(then.start.formatted(date: .omitted, time: .shortened))
-                                    .font(.numeric(11, weight: .semibold))
-                            }
-                            .font(.rounded(11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.55))
-                            .padding(.horizontal, 4)
+                            Text("+\(calendar.upcoming.count - 1) more today")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.4))
+                                .padding(.top, 5)
                         }
-                        Spacer(minLength: 0)
                     } else {
-                        Spacer(minLength: 0)
-                        HStack(spacing: 8) {
-                            Image(systemName: Calendar.current.component(.hour, from: context.date) < 18 ? "sun.max.fill" : "moon.stars.fill")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Palette.rest.mid)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text("Nothing else today")
-                                    .font(.rounded(12.5, weight: .semibold))
-                                    .foregroundStyle(.white)
-                                Text("Your calendar is clear")
-                                    .font(.rounded(11, weight: .medium))
-                                    .foregroundStyle(.white.opacity(0.45))
-                            }
-                        }
-                        Spacer(minLength: 0)
+                        Text("No more events today")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.55))
+                        Text("Your evening is clear")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.35))
                     }
                 case .unknown:
-                    connectCalendar(showsSymbol: false)
+                    Text("See your classes and meetings here")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Button("Connect Calendar") { Task { await calendar.prepare() } }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 12)
+                        .frame(height: 26)
+                        .background(.white, in: .capsule)
+                        .padding(.top, 6)
                 case .denied:
-                    deniedCalendar
+                    Text("FocusKit can't see your calendar")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Button("Open Privacy Settings") { calendar.openSettings() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.top, 4)
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .notchCard()
+            .padding(.vertical, 4)
         }
     }
 
-    @ViewBuilder
     private var musicTab: some View {
-        if nowPlaying.hasTrack {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                HStack(spacing: 18) {
-                    artwork(size: 128, radius: 20)
-                        .shadow(color: nowPlaying.accent.opacity(0.5), radius: 18, y: 8)
-                        .scaleEffect(nowPlaying.isPlaying ? 1 : 0.94)
-                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: nowPlaying.isPlaying)
-
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(spacing: 6) {
-                            Equalizer(tint: nowPlaying.accent, isPlaying: nowPlaying.isPlaying)
-                                .frame(width: 12, height: 11)
-                            Text(nowPlaying.isPlaying ? "Playing on \(nowPlaying.player?.scriptName ?? "")" : "Paused")
-                                .font(.rounded(10.5, weight: .bold))
-                                .foregroundStyle(.white.opacity(0.7))
-                            Spacer(minLength: 0)
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                if nowPlaying.hasTrack {
+                    artwork(size: 64, radius: 14)
+                } else {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(.white.opacity(0.08))
+                        .frame(width: 64, height: 64)
+                        .overlay {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 22, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.4))
                         }
-                        Spacer(minLength: 6)
-                        Text(nowPlaying.title)
-                            .font(.rounded(19, weight: .bold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(nowPlaying.hasTrack ? nowPlaying.title : "Not Playing")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white.opacity(nowPlaying.hasTrack ? 1 : 0.4))
+                    if nowPlaying.hasTrack {
                         Text(nowPlaying.artist)
-                            .font(.rounded(13, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.6))
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        if nowPlaying.duration > 0 {
-                            VStack(spacing: 4) {
-                                ProgressLine(value: nowPlaying.elapsed(at: context.date) / nowPlaying.duration, tint: .white, height: 4)
-                                HStack {
-                                    Text(nowPlaying.elapsed(at: context.date).clock)
-                                    Spacer()
-                                    Text("-" + max(0, nowPlaying.duration - nowPlaying.elapsed(at: context.date)).clock)
-                                }
-                                .font(.numeric(10, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.5))
-                            }
-                        }
-                        Spacer(minLength: 6)
-                        playbackControls(small: 32, large: 42)
-                            .frame(maxWidth: .infinity)
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(.white.opacity(0.55))
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background { ArtworkBackdrop(artwork: nowPlaying.artwork, accent: nowPlaying.accent) }
-                .notchCard()
+                .lineLimit(1)
+                Spacer(minLength: 0)
+                Equalizer(tint: nowPlaying.hasTrack ? nowPlaying.accent : .white.opacity(0.25), isPlaying: nowPlaying.isPlaying)
+                    .frame(width: 16, height: 14)
             }
-        } else {
-            HStack(spacing: 10) {
-                ForEach([NowPlaying.Player.spotify, .music], id: \.self) { player in
-                    PlayerLauncher(player: player) { nowPlaying.play(in: player) }
+            Scrubber(nowPlaying: nowPlaying, height: 5)
+            HStack(spacing: 0) {
+                playerButton
+                Spacer()
+                glyphButton("backward.fill", size: 21, help: "Previous") { nowPlaying.previous() }
+                    .disabled(!nowPlaying.hasTrack)
+                Spacer()
+                glyphButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: 30, help: nowPlaying.isPlaying ? "Pause" : "Play") {
+                    if nowPlaying.hasTrack {
+                        nowPlaying.togglePlayback()
+                    } else {
+                        nowPlaying.play(in: NowPlaying.isInstalled(.spotify) ? .spotify : .music)
+                    }
+                }
+                Spacer()
+                glyphButton("forward.fill", size: 21, help: "Next") { nowPlaying.next() }
+                    .disabled(!nowPlaying.hasTrack)
+                Spacer()
+                glyphButton("hifispeaker.2", size: 15, dim: true, help: "Sound output") {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension") {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 4)
         }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .task { await keepInSync() }
+    }
+
+    private var playerButton: some View {
+        let fallback: NowPlaying.Player = NowPlaying.isInstalled(.spotify) ? .spotify : .music
+        let bundleID = nowPlaying.hasTrack ? (nowPlaying.appBundleID ?? fallback.rawValue) : fallback.rawValue
+        let name = nowPlaying.hasTrack ? nowPlaying.appName : fallback.scriptName
+        let icon = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map { NSWorkspace.shared.icon(forFile: $0.path(percentEncoded: false)) }
+        return Button {
+            if nowPlaying.hasTrack {
+                nowPlaying.open()
+            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: fallback.rawValue) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            }
+        } label: {
+            Group {
+                if let icon {
+                    Image(nsImage: icon).resizable()
+                } else {
+                    Image(systemName: "music.note").font(.system(size: 14, weight: .semibold))
+                }
+            }
+            .frame(width: 22, height: 22)
+            .frame(width: 30, height: 30)
+            .contentShape(.circle)
+        }
+        .buttonStyle(GlyphButtonStyle())
+        .help("Open \(name)")
+    }
+
+    private func glyphButton(_ symbol: String, size: CGFloat, dim: Bool = false, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(.white.opacity(dim ? 0.55 : 1))
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: size * 1.8, height: size * 1.8)
+                .contentShape(.circle)
+        }
+        .buttonStyle(GlyphButtonStyle())
+        .help(help)
     }
 
     private func artwork(size: CGFloat, radius: CGFloat) -> some View {
@@ -488,16 +649,16 @@ struct IslandView: View {
             }
         }
         .buttonStyle(.pressable)
-        .help("Open \(nowPlaying.player?.scriptName ?? "player")")
+        .help(nowPlaying.appName.isEmpty ? "Open player" : "Open \(nowPlaying.appName)")
     }
 
     private func playbackControls(small: CGFloat, large: CGFloat) -> some View {
-        HStack(spacing: small * 0.5) {
-            iconButton("backward.fill", help: "Previous", size: small) { nowPlaying.previous() }
-            iconButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", help: nowPlaying.isPlaying ? "Pause" : "Play", size: large, highlighted: true) {
+        HStack(spacing: small * 0.9) {
+            glyphButton("backward.fill", size: small * 0.55, help: "Previous") { nowPlaying.previous() }
+            glyphButton(nowPlaying.isPlaying ? "pause.fill" : "play.fill", size: large * 0.62, help: nowPlaying.isPlaying ? "Pause" : "Play") {
                 nowPlaying.togglePlayback()
             }
-            iconButton("forward.fill", help: "Next", size: small) { nowPlaying.next() }
+            glyphButton("forward.fill", size: small * 0.55, help: "Next") { nowPlaying.next() }
         }
     }
 
@@ -514,45 +675,63 @@ struct IslandView: View {
         return engine.plan?.mode.symbol ?? mode.symbol
     }
 
+    private func wings<Leading: View, Trailing: View>(@ViewBuilder leading: () -> Leading, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(spacing: 0) {
+            leading()
+                .frame(width: IslandController.hudWing - 26, alignment: .leading)
+                .padding(.leading, 16)
+                .padding(.trailing, 10)
+            Spacer(minLength: 0)
+            trailing()
+                .frame(width: IslandController.hudWing - 26, alignment: .trailing)
+                .padding(.leading, 10)
+                .padding(.trailing, 16)
+        }
+        .frame(height: controller.notch.height)
+    }
+
     @ViewBuilder
     private var hud: some View {
         if let event = systemHUD.event {
-            HStack(spacing: 0) {
-                HStack(spacing: 9) {
+            let percent = Int((event.value * 100).rounded())
+            wings {
+                HStack(spacing: 8) {
                     Image(systemName: hudSymbol(event))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(hudTint(event))
                         .contentTransition(.symbolEffect(.replace))
                         .frame(width: 22)
-                    Text(hudTitle(event))
-                        .font(.rounded(13.5, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: IslandController.hudWing, alignment: .leading)
-                .padding(.leading, 16)
-                Spacer(minLength: 0)
-                HStack(spacing: 10) {
-                    GeometryReader { proxy in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(.white.opacity(0.16))
-                            Capsule()
-                                .fill(LinearGradient(colors: hudColors(event), startPoint: .leading, endPoint: .trailing))
-                                .frame(width: max(6, proxy.size.width * event.value))
-                                .animation(.spring(response: 0.3, dampingFraction: 0.9), value: event.value)
-                        }
-                    }
-                    .frame(height: 6)
-                    Text("\(Int((event.value * 100).rounded()))")
-                        .font(.numeric(13, weight: .bold))
-                        .foregroundStyle(.white)
+                    Text(event.kind == .volume && event.isMuted ? "Off" : "\(percent)%")
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white.opacity(0.85))
                         .contentTransition(.numericText(value: event.value))
-                        .animation(Motion.quick, value: event.value)
-                        .frame(width: 28, alignment: .trailing)
+                        .animation(Motion.quick, value: percent)
                 }
-                .frame(width: IslandController.hudWing - 10)
-                .padding(.trailing, 16)
+            } trailing: {
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(.white.opacity(0.18))
+                        Capsule()
+                            .fill(hudTint(event))
+                            .frame(width: max(5, proxy.size.width * (event.kind == .volume && event.isMuted ? 0 : event.value)))
+                            .animation(.spring(response: 0.28, dampingFraction: 1), value: event.value)
+                    }
+                }
+                .frame(height: 5)
+                .opacity(event.kind == .volume && event.isMuted ? 0.5 : 1)
             }
-            .frame(height: controller.notch.height)
+        }
+    }
+
+    private func hudTint(_ event: SystemHUD.Event) -> Color {
+        switch event.kind {
+        case .battery:
+            if event.isCharging { return Color(hex: 0x34C759) }
+            return event.value < 0.2 ? Color(hex: 0xFF453A) : .white
+        case .volume, .brightness:
+            return .white
         }
     }
 
@@ -568,33 +747,26 @@ struct IslandView: View {
         }
     }
 
-    private func hudTitle(_ event: SystemHUD.Event) -> String {
-        switch event.kind {
-        case .volume: event.isMuted ? "Muted" : "Volume"
-        case .brightness: "Brightness"
-        case .battery: event.isCharging ? "Charging" : "On battery"
-        }
-    }
-
-    private func hudColors(_ event: SystemHUD.Event) -> [Color] {
-        switch event.kind {
-        case .volume: [Color(hex: 0x34C759), Color(hex: 0xB8E04A)]
-        case .brightness: [Color(hex: 0xFFC94A), Color(hex: 0xFFF2B0)]
-        case .battery: event.value < 0.2 ? [Color(hex: 0xFF5A4E), Color(hex: 0xFF8F70)] : [Color(hex: 0x34C759), Color(hex: 0x7BE495)]
-        }
-    }
-
     private var compact: some View {
         HStack(spacing: 0) {
             leftWing
-                .frame(width: IslandController.wing, alignment: .leading)
+                .id(wingContent)
+                .transition(.blurReplace)
+                .frame(width: controller.wing, alignment: .leading)
                 .padding(.leading, 14)
             Spacer(minLength: 0)
             rightWing
-                .frame(width: IslandController.wing, alignment: .trailing)
+                .id(wingContent)
+                .transition(.blurReplace)
+                .frame(width: controller.wing, alignment: .trailing)
                 .padding(.trailing, 14)
         }
         .frame(height: controller.notch.height)
+        .animation(.easeOut(duration: 0.22), value: wingContent)
+    }
+
+    private var wingContent: Int {
+        controller.isBusy ? 1 : nowPlaying.hasTrack ? 2 : 0
     }
 
     @ViewBuilder
@@ -635,7 +807,7 @@ struct IslandView: View {
         if controller.isBusy {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(time(at: context.date))
-                    .font(.numeric(13, weight: .bold))
+                    .font(.system(size: 13, weight: .bold).monospacedDigit())
                     .foregroundStyle(tint)
                     .contentTransition(.numericText(countsDown: !recorder.isActive))
                     .animation(Motion.quick, value: time(at: context.date))
@@ -651,7 +823,7 @@ struct IslandView: View {
     private var peek: some View {
         if let announcement = controller.announcement {
             let isMusic = announcement.symbol == "music.note"
-            HStack(spacing: 0) {
+            wings {
                 HStack(spacing: 8) {
                     if isMusic {
                         artworkThumbnail
@@ -661,43 +833,34 @@ struct IslandView: View {
                             .frame(width: 12, height: 12)
                     } else {
                         Image(systemName: announcement.symbol)
-                            .font(.system(size: 10.5, weight: .bold))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(announcement.tint)
-                            .frame(width: 22, height: 22)
-                            .background(announcement.tint.opacity(0.2), in: .circle)
+                            .frame(width: 22)
                             .symbolEffect(.bounce, value: announcement.title)
                         Text(announcement.title)
-                            .font(.rounded(13, weight: .bold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.white)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                     }
                 }
-                .frame(width: IslandController.hudWing, alignment: .leading)
-                .padding(.leading, 14)
-                Spacer(minLength: 0)
-                Group {
-                    if isMusic {
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text(announcement.title)
-                                .font(.rounded(12, weight: .bold))
-                                .foregroundStyle(.white)
-                            Text(announcement.detail)
-                                .font(.rounded(10.5, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.55))
-                        }
+            } trailing: {
+                if isMusic {
+                    Text(announcement.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
                         .lineLimit(1)
-                    } else {
-                        Text(announcement.detail)
-                            .font(.rounded(13, weight: .semibold))
-                            .foregroundStyle(announcement.tint)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
+                        .help(announcement.detail)
+                } else {
+                    Text(announcement.detail)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-                .frame(width: IslandController.hudWing, alignment: .trailing)
-                .padding(.trailing, 14)
             }
-            .frame(height: controller.notch.height)
+            .id(announcement)
+            .transition(.blurReplace)
         }
     }
 
@@ -712,160 +875,277 @@ struct IslandView: View {
         }
     }
 
-    private func connectCalendar(showsSymbol: Bool) -> some View {
-        VStack(spacing: 10) {
-            Spacer(minLength: 0)
-            if showsSymbol {
-                Image(systemName: "calendar.badge.plus")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-            Text("See your classes and meetings here")
-                .font(.rounded(12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
-                .multilineTextAlignment(.center)
-            Button("Connect Calendar") { Task { await calendar.prepare() } }
-                .buttonStyle(.plain)
-                .font(.rounded(12, weight: .semibold))
-                .foregroundStyle(.black)
-                .padding(.horizontal, 14)
-                .frame(height: 28)
-                .background(.white, in: .capsule)
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var deniedCalendar: some View {
-        VStack(spacing: 10) {
-            Spacer(minLength: 0)
-            Text("FocusKit can't see your calendar.")
-                .font(.rounded(12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
-            Button("Open Privacy Settings") { calendar.openSettings() }
-                .buttonStyle(.plain)
-                .font(.rounded(12, weight: .semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 14)
-                .frame(height: 28)
-                .background(.white.opacity(0.14), in: .capsule)
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var calendarTab: some View {
-        HStack(alignment: .top, spacing: 10) {
-            MonthGrid(calendar: calendar)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 10)
-                .frame(width: 244)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .notchCard()
-            dayAgenda
-                .padding(12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .notchCard()
-        }
-    }
-
-    private var dayAgenda: some View {
-        let system = Calendar.current
-        let day = calendar.selected
-        let isToday = system.isDateInToday(day)
-        let events = calendar.access == .granted ? calendar.events(on: day) : []
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 10) {
-                Text("\(system.component(.day, from: day))")
-                    .font(.numeric(30, weight: .bold))
-                    .foregroundStyle(isToday ? Color.accentColor : .white)
-                    .contentTransition(.numericText())
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(isToday ? "Today" : day.formatted(.dateTime.weekday(.wide)))
-                        .font(.rounded(13, weight: .bold))
+    private var trayTab: some View {
+        HStack(spacing: 10) {
+            if tray.items.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray.and.arrow.down.fill")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .symbolEffect(.bounce, value: isDropTargeted)
+                    Text("Drop files here")
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                    Text(events.isEmpty ? day.formatted(.dateTime.month(.wide)) : "\(events.count) \(events.count == 1 ? "event" : "events")")
-                        .font(.rounded(11, weight: .semibold))
+                    Text("Keep them close, then drag them out or AirDrop them.")
+                        .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
                 }
-                Spacer(minLength: 0)
-                if !isToday {
-                    Button("Today") { calendar.select(.now) }
-                        .buttonStyle(.plain)
-                        .font(.rounded(11, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 10)
-                        .frame(height: 22)
-                        .background(.white.opacity(0.12), in: .capsule)
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(.white.opacity(0.18), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
                 }
-                Button {
-                    calendar.openCalendar()
-                } label: {
-                    Image(systemName: "arrow.up.forward")
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .frame(width: 22, height: 22)
-                        .background(.white.opacity(0.1), in: .circle)
-                }
-                .buttonStyle(.pressable)
-                .help("Open Calendar")
-            }
-            switch calendar.access {
-            case .granted:
-                if events.isEmpty {
-                    Spacer(minLength: 0)
-                    VStack(spacing: 6) {
-                        Image(systemName: "sun.horizon.fill")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(Palette.rest.mid)
-                        Text("Nothing scheduled")
-                            .font(.rounded(12.5, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.75))
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 6) {
+                        ForEach(tray.items) { item in
+                            TrayTile(item: item, tray: tray)
+                                .transition(.scale(scale: 0.8).combined(with: .opacity))
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    Spacer(minLength: 0)
-                } else {
+                    .padding(8)
+                }
+                .scrollIndicators(.never)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .notchCard()
+
+                VStack(spacing: 6) {
+                    trayAction("AirDrop", symbol: "antenna.radiowaves.left.and.right") { tray.airDrop(tray.urls) }
+                    ShareLink(items: tray.urls) {
+                        trayActionLabel("Share", symbol: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.pressable)
+                    trayAction("Clear", symbol: "xmark") {
+                        withAnimation(.spring(response: 0.36, dampingFraction: 0.9)) { tray.clear() }
+                    }
+                }
+                .frame(width: 112)
+            }
+        }
+    }
+
+    private func trayAction(_ title: String, symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            trayActionLabel(title, symbol: symbol)
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private func trayActionLabel(_ title: String, symbol: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 18)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.white.opacity(0.08), in: .rect(cornerRadius: 14, style: .continuous))
+        .contentShape(.rect(cornerRadius: 14))
+    }
+
+    @ViewBuilder
+    private var clipboardTab: some View {
+        switch clipboard.access {
+        case .off:
+            clipboardMessage(
+                symbol: "list.clipboard",
+                title: "Clipboard history",
+                text: "Keep the last 40 things you copy and copy them again with a click. Passwords are never kept, and nothing is saved to disk.",
+                action: "Turn On"
+            ) { clipboard.enable() }
+        case .needsAlwaysAllow, .denied:
+            clipboardMessage(
+                symbol: "hand.raised.fill",
+                title: "Allow FocusKit to read what you copy",
+                text: "In System Settings › Privacy & Security, set FocusKit to Always Allow for pasting from other apps.",
+                action: "Open Settings"
+            ) { clipboard.openSettings() }
+        case .active:
+            if clipboard.items.isEmpty {
+                clipboardMessage(symbol: "doc.on.doc", title: "Nothing copied yet", text: "Text, links, images and files you copy will show up here.", action: nil) {}
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        sectionLabel("RECENT")
+                        Spacer()
+                        Button("Clear") {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) { clipboard.clear() }
+                        }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 4)
                     ScrollView {
-                        VStack(spacing: 6) {
-                            ForEach(events) { event in
-                                EventRow(event: event)
-                                    .transition(.opacity.combined(with: .offset(y: 4)))
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)], spacing: 6) {
+                            ForEach(clipboard.items) { item in
+                                ClipboardCard(item: item, isCopied: clipboard.copiedID == item.id) {
+                                    clipboard.copy(item)
+                                } remove: {
+                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) { clipboard.remove(item) }
+                                }
+                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
                             }
                         }
                     }
                     .scrollIndicators(.never)
                 }
-            case .unknown:
-                connectCalendar(showsSymbol: true)
-            case .denied:
-                deniedCalendar
+                .padding(.horizontal, 4)
+                .animation(.spring(response: 0.32, dampingFraction: 0.9), value: clipboard.items.map(\.id))
             }
         }
+    }
+
+    private func clipboardMessage(symbol: String, title: String, text: String, action: String?, perform: @escaping () -> Void) -> some View {
+        HStack(spacing: 16) {
+            Image(systemName: symbol)
+                .font(.system(size: 26, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 56, height: 56)
+                .background(.white.opacity(0.07), in: .rect(cornerRadius: 16, style: .continuous))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let action {
+                    HStack(spacing: 10) {
+                        Button(action, action: perform)
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 14)
+                            .frame(height: 26)
+                            .background(.white, in: .capsule)
+                        if clipboard.access != .off {
+                            Button("Turn Off") { clipboard.disable() }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.55))
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var calendarTab: some View {
+        let system = Calendar.current
+        let day = calendar.selected
+        let events = calendar.access == .granted ? calendar.events(on: day) : []
+        let isToday = system.isDateInToday(day)
+        let tomorrow = system.date(byAdding: .day, value: 1, to: system.startOfDay(for: .now)) ?? .now
+        let upcoming = isToday && events.isEmpty && calendar.access == .granted ? calendar.events(on: tomorrow) : []
+        return HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0xFF453A))
+                Text("\(system.component(.day, from: day))")
+                    .font(.system(size: 46, weight: .regular))
+                    .foregroundStyle(.white)
+                    .contentTransition(.numericText())
+                    .padding(.top, -4)
+                Spacer(minLength: 0)
+                calendarStatus(events: events, isToday: isToday)
+            }
+            .frame(width: 112, alignment: .leading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+
+            VStack(alignment: .leading, spacing: 6) {
+                if !events.isEmpty {
+                    if !isToday {
+                        sectionLabel(day.formatted(.dateTime.day().month(.abbreviated)))
+                    }
+                    eventList(events)
+                } else if !upcoming.isEmpty {
+                    sectionLabel("TOMORROW")
+                    eventList(upcoming)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            MonthGrid(calendar: calendar)
+                .frame(width: 168)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
         .animation(.spring(response: 0.32, dampingFraction: 0.9), value: calendar.selected)
     }
 
     @ViewBuilder
-    private var thumbnail: some View {
-        if recorder.isActive {
-            Waveform(levels: Array(recorder.levels.suffix(18)))
-                .padding(10)
-                .background(Palette.record.opacity(0.14))
-        } else if engine.isResting {
-            BreatheScene(insets: EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
-                .background(Palette.rest.light)
-        } else if let plan = engine.plan {
-            FocusScene(
-                mode: plan.mode,
-                progress: { engine.focusProgress(at: $0) },
-                route: plan.route,
-                variant: plan.variant,
-                isPaused: engine.isPaused,
-                isAnimated: controller.shape == .expanded,
-                insets: EdgeInsets(top: 8, leading: 8, bottom: 8, trailing: 8)
-            )
-            .background(plan.mode.palette.light)
+    private func calendarStatus(events: [CalendarStore.Event], isToday: Bool) -> some View {
+        switch calendar.access {
+        case .granted:
+            VStack(alignment: .leading, spacing: 2) {
+                Text(events.isEmpty ? (isToday ? "No events today" : "No events") : "\(events.count) \(events.count == 1 ? "event" : "events")")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.6))
+                Text(events.isEmpty ? "Your day is clear" : isToday ? "Today" : calendar.selected.formatted(.dateTime.month(.wide)))
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.white.opacity(0.35))
+                if !isToday {
+                    Button("Back to today") { calendar.select(.now) }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color(hex: 0xFF453A))
+                        .padding(.top, 4)
+                }
+            }
+        case .unknown:
+            VStack(alignment: .leading, spacing: 6) {
+                Text("See your classes here")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.white.opacity(0.5))
+                Button("Connect") { Task { await calendar.prepare() } }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12)
+                    .frame(height: 24)
+                    .background(.white, in: .capsule)
+            }
+        case .denied:
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No access to Calendar")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.white.opacity(0.5))
+                Button("Open Settings") { calendar.openSettings() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
         }
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.4))
+    }
+
+    private func eventList(_ events: [CalendarStore.Event]) -> some View {
+        ScrollView {
+            VStack(spacing: 5) {
+                ForEach(events) { event in
+                    EventBlock(event: event)
+                        .transition(.opacity.combined(with: .offset(y: 4)))
+                }
+            }
+        }
+        .scrollIndicators(.never)
     }
 
     private func iconButton(_ symbol: String, help: String, size: CGFloat = 30, highlighted: Bool = false, action: @escaping () -> Void) -> some View {
@@ -928,44 +1208,25 @@ struct IslandView: View {
     }
 }
 
-private struct ProgressLine: View {
-    let value: Double
-    let tint: Color
-    var height: CGFloat = 3
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(.white.opacity(0.12))
-                Capsule()
-                    .fill(tint)
-                    .frame(width: max(3, proxy.size.width * min(1, max(0, value))))
-                    .animation(.linear(duration: 1), value: value)
-            }
-        }
-        .frame(height: height)
-    }
-}
-
 private struct Equalizer: View {
     let tint: Color
     let isPlaying: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !isPlaying || reduceMotion)) { context in
+        TimelineView(.animation(minimumInterval: FrameRate.interval(active: false), paused: !isPlaying || reduceMotion)) { context in
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(0..<3, id: \.self) { index in
                     let phase = t * (2.6 + Double(index) * 0.9) + Double(index) * 1.7
                     Capsule()
                         .fill(tint)
-                        .frame(width: 2.5, height: 4 + 12 * (0.5 + 0.5 * sin(phase)) * (0.6 + 0.4 * sin(phase * 0.37)))
+                        .frame(width: 2.5, height: isPlaying && !reduceMotion ? 4 + 12 * (0.5 + 0.5 * sin(phase)) * (0.6 + 0.4 * sin(phase * 0.37)) : 3 + CGFloat(index % 2) * 2)
                 }
             }
             .frame(maxHeight: .infinity, alignment: .bottom)
-            .animation(.easeOut(duration: 0.08), value: Int(t * 12))
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isPlaying)
     }
 }
 
@@ -974,34 +1235,30 @@ private struct MonthGrid: View {
 
     var body: some View {
         let system = Calendar.current
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
+        VStack(spacing: 3) {
+            HStack(spacing: 0) {
                 Text(calendar.month.formatted(.dateTime.month(.wide)).capitalized)
-                    .font(.rounded(13, weight: .bold))
-                    .foregroundStyle(.white)
-                Text(calendar.month.formatted(.dateTime.year()))
-                    .font(.rounded(13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.4))
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0xFF453A))
                 Spacer()
                 chevron("chevron.left") { calendar.showMonth(offset: -1) }
                 chevron("chevron.right") { calendar.showMonth(offset: 1) }
             }
             .padding(.leading, 4)
-            .padding(.bottom, 2)
             HStack(spacing: 0) {
                 ForEach(Array(calendar.weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol.uppercased())
-                        .font(.rounded(9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.32))
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.35))
                         .frame(maxWidth: .infinity)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 2) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 1) {
                 ForEach(calendar.days, id: \.self) { day in
                     if system.isDate(day, equalTo: calendar.month, toGranularity: .month) {
                         DayCell(
                             day: system.component(.day, from: day),
-                            color: calendar.events(on: day).first?.color,
+                            hasEvents: calendar.hasEvents(on: day),
                             isToday: system.isDateInToday(day),
                             isSelected: system.isDate(day, inSameDayAs: calendar.selected),
                             isWeekend: system.isDateInWeekend(day)
@@ -1010,7 +1267,7 @@ private struct MonthGrid: View {
                         }
                     } else {
                         Color.clear
-                            .frame(height: 26)
+                            .frame(height: 22)
                     }
                 }
             }
@@ -1023,18 +1280,18 @@ private struct MonthGrid: View {
     private func chevron(_ symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(.white.opacity(0.6))
-                .frame(width: 22, height: 22)
-                .contentShape(.circle)
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(.white.opacity(0.55))
+                .frame(width: 20, height: 18)
+                .contentShape(.rect)
         }
-        .buttonStyle(.pressable)
+        .buttonStyle(GlyphButtonStyle())
     }
 }
 
 private struct DayCell: View {
     let day: Int
-    let color: Color?
+    let hasEvents: Bool
     let isToday: Bool
     let isSelected: Bool
     let isWeekend: Bool
@@ -1045,30 +1302,23 @@ private struct DayCell: View {
         Button(action: select) {
             VStack(spacing: 1) {
                 Text("\(day)")
-                    .font(.rounded(11.5, weight: isToday ? .bold : .medium))
+                    .font(.system(size: 11, weight: isToday ? .semibold : .regular))
                     .monospacedDigit()
-                    .foregroundStyle(isToday ? .white : .white.opacity(isWeekend ? 0.5 : 0.88))
-                    .frame(width: 21, height: 21)
+                    .foregroundStyle(isToday ? .white : .white.opacity(isWeekend ? 0.45 : 0.85))
+                    .frame(width: 18, height: 18)
                     .background {
                         Circle()
-                            .fill(isToday ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.white.opacity(isSelected ? 0.16 : isHovering ? 0.08 : 0)))
-                    }
-                    .overlay {
-                        if isSelected, isToday {
-                            Circle()
-                                .strokeBorder(.white.opacity(0.85), lineWidth: 1.5)
-                                .padding(-2.5)
-                        }
+                            .fill(isToday ? AnyShapeStyle(Color(hex: 0xFF453A)) : AnyShapeStyle(.white.opacity(isSelected ? 0.2 : isHovering ? 0.08 : 0)))
                     }
                 Circle()
-                    .fill(color ?? .clear)
-                    .frame(width: 3.5, height: 3.5)
+                    .fill(.white.opacity(hasEvents ? 0.45 : 0))
+                    .frame(width: 2.5, height: 2.5)
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 26)
+            .frame(height: 22)
             .contentShape(.rect)
         }
-        .buttonStyle(.pressable)
+        .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
         }
@@ -1076,94 +1326,103 @@ private struct DayCell: View {
     }
 }
 
-private struct EventRow: View {
+private struct EventBlock: View {
     let event: CalendarStore.Event
 
     var body: some View {
         let isNow = event.start <= .now && event.end > .now
         let isPast = event.end < .now
-        HStack(alignment: .center, spacing: 9) {
-            VStack(alignment: .trailing, spacing: 1) {
-                if event.isAllDay {
-                    Text("All day")
-                } else {
-                    Text(event.start.formatted(date: .omitted, time: .shortened))
-                    Text(event.end.formatted(date: .omitted, time: .shortened))
-                        .foregroundStyle(.white.opacity(0.4))
-                }
-            }
-            .font(.numeric(10.5, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.85))
-            .frame(width: 42, alignment: .trailing)
+        let text = event.color.mix(with: .white, by: 0.35)
+        HStack(spacing: 7) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(event.color)
                 .frame(width: 3)
-                .padding(.vertical, 2)
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.title)
-                    .font(.rounded(12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(text)
                     .lineLimit(1)
                 if let location = event.location, !location.isEmpty {
-                    Text(location)
-                        .font(.rounded(10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.45))
+                    Label(location, systemImage: "mappin")
+                        .labelStyle(TightLabel())
+                        .font(.system(size: 11))
+                        .foregroundStyle(text.opacity(0.75))
                         .lineLimit(1)
                 }
+                Text(event.isAllDay ? "All day" : "\(event.start.formatted(date: .omitted, time: .shortened)) – \(event.end.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 11))
+                    .monospacedDigit()
+                    .foregroundStyle(text.opacity(0.75))
             }
-            Spacer(minLength: 4)
-            if isNow {
-                Text("Now")
-                    .font(.rounded(9.5, weight: .bold))
-                    .foregroundStyle(.black)
-                    .padding(.horizontal, 6)
-                    .frame(height: 16)
-                    .background(event.color, in: .capsule)
-            }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 38)
-        .background(event.color.opacity(isNow ? 0.24 : 0.1), in: .rect(cornerRadius: 10, style: .continuous))
+        .padding(.vertical, 5)
+        .padding(.horizontal, 6)
+        .background(event.color.opacity(isNow ? 0.3 : 0.18), in: .rect(cornerRadius: 8, style: .continuous))
         .opacity(isPast ? 0.5 : 1)
     }
 }
 
-private struct NextEvent: View {
-    let event: CalendarStore.Event
-    let now: Date
+private struct TightLabel: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) {
+            configuration.icon
+            configuration.title
+        }
+    }
+}
 
-    private var when: String {
-        if event.start <= now { return "Now · until \(event.end.formatted(date: .omitted, time: .shortened))" }
-        let minutes = Int(event.start.timeIntervalSince(now) / 60)
-        if minutes < 1 { return "Starting" }
-        if minutes < 60 { return "In \(minutes) min" }
-        return "At \(event.start.formatted(date: .omitted, time: .shortened))"
+private struct GlyphButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        GlyphBody(configuration: configuration)
     }
 
-    var body: some View {
-        HStack(spacing: 9) {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(event.color)
-                .frame(width: 4)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(when)
-                    .font(.rounded(10.5, weight: .bold))
-                    .foregroundStyle(event.color)
-                Text(event.title)
-                    .font(.rounded(13, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                if let location = event.location, !location.isEmpty {
-                    Text(location)
-                        .font(.rounded(10.5, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .lineLimit(1)
+    private struct GlyphBody: View {
+        let configuration: ButtonStyleConfiguration
+        @State private var isHovering = false
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .opacity(isEnabled ? 1 : 0.35)
+                .background {
+                    Circle()
+                        .fill(.white.opacity(configuration.isPressed ? 0.16 : isHovering && isEnabled ? 0.09 : 0))
                 }
-            }
-            Spacer(minLength: 0)
+                .scaleEffect(configuration.isPressed ? 0.9 : 1)
+                .animation(.spring(response: 0.2, dampingFraction: 1), value: configuration.isPressed)
+                .animation(.easeOut(duration: 0.12), value: isHovering)
+                .onHover { isHovering = $0 }
         }
-        .padding(9)
-        .background(event.color.opacity(0.14), in: .rect(cornerRadius: 12, style: .continuous))
+    }
+}
+
+private struct ModeTile: View {
+    let mode: FocusMode
+    let isCurrent: Bool
+    let start: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: start) {
+            VStack(spacing: 5) {
+                Image(systemName: mode.symbol)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(mode.palette.mid)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                    .background(.white.opacity(isHovering ? 0.15 : isCurrent ? 0.11 : 0.07), in: .rect(cornerRadius: 12, style: .continuous))
+                Text(mode.title)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.white.opacity(isCurrent || isHovering ? 0.85 : 0.5))
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.pressable)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
+        }
+        .help("Start \(mode.title)")
     }
 }
 
@@ -1173,96 +1432,253 @@ private struct WeekBars: View {
 
     var body: some View {
         let peak = max(minutes.max() ?? 0, 30)
-        HStack(alignment: .bottom, spacing: 4) {
-            ForEach(Array(minutes.enumerated()), id: \.offset) { index, value in
-                let isToday = index == minutes.count - 1
-                Capsule()
-                    .fill(isToday ? AnyShapeStyle(tint.gradient) : AnyShapeStyle(.white.opacity(value > 0 ? 0.3 : 0.1)))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: max(4, 44 * value / peak))
+        GeometryReader { proxy in
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(Array(minutes.enumerated()), id: \.offset) { index, value in
+                    let isToday = index == minutes.count - 1
+                    Capsule()
+                        .fill(isToday ? AnyShapeStyle(tint) : AnyShapeStyle(.white.opacity(value > 0 ? 0.3 : 0.12)))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: max(3, proxy.size.height * value / peak))
+                }
             }
+            .frame(maxHeight: .infinity, alignment: .bottom)
         }
-        .frame(maxHeight: .infinity, alignment: .bottom)
         .help("Last 7 days")
     }
 }
 
-private struct PlayerLauncher: View {
-    let player: NowPlaying.Player
-    let play: () -> Void
+private struct Scrubber: View {
+    let nowPlaying: NowPlaying
+    var height: CGFloat = 4
+    @State private var dragFraction: Double?
     @State private var isHovering = false
 
-    private var icon: NSImage? {
-        NSWorkspace.shared.urlForApplication(withBundleIdentifier: player.rawValue).map { NSWorkspace.shared.icon(forFile: $0.path(percentEncoded: false)) }
-    }
-
     var body: some View {
-        let installed = icon != nil
-        Button(action: play) {
-            VStack(spacing: 8) {
-                Group {
-                    if let icon {
-                        Image(nsImage: icon)
-                            .resizable()
-                    } else {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.5))
+        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            let duration = nowPlaying.duration
+            let hasDuration = nowPlaying.hasTrack && duration > 0
+            let elapsed = nowPlaying.elapsed(at: context.date)
+            let fraction = dragFraction ?? (hasDuration ? min(1, max(0, elapsed / duration)) : 0)
+            let shown = dragFraction.map { $0 * duration } ?? elapsed
+            let isActive = hasDuration && (isHovering || dragFraction != nil)
+            HStack(spacing: 10) {
+                Text(hasDuration ? shown.clock : "-:--")
+                    .frame(width: 38, alignment: .leading)
+                GeometryReader { proxy in
+                    let width = proxy.size.width
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(.white.opacity(0.18))
+                        Capsule()
+                            .fill(.white.opacity(isActive ? 1 : 0.85))
+                            .frame(width: hasDuration ? max(height, width * fraction) : 0)
                     }
+                    .frame(height: isActive ? height + 3 : height)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(.rect)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                guard hasDuration else { return }
+                                dragFraction = min(1, max(0, value.location.x / max(1, width)))
+                            }
+                            .onEnded { value in
+                                guard hasDuration else { return }
+                                nowPlaying.seek(to: min(1, max(0, value.location.x / max(1, width))))
+                                dragFraction = nil
+                            }
+                    )
                 }
-                .frame(width: 52, height: 52)
-                .scaleEffect(isHovering ? 1.06 : 1)
-                VStack(spacing: 1) {
-                    Text(player.scriptName)
-                        .font(.rounded(13, weight: .bold))
-                        .foregroundStyle(.white)
-                    Text(installed ? "Play" : "Not installed")
-                        .font(.rounded(11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
+                .frame(height: 14)
+                Text(hasDuration ? "-" + max(0, duration - shown).clock : "--:--")
+                    .frame(width: 44, alignment: .trailing)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.white.opacity(isHovering ? 0.05 : 0))
-            .notchCard()
-            .contentShape(.rect)
+            .font(.system(size: 11, weight: .medium))
+            .monospacedDigit()
+            .foregroundStyle(.white.opacity(isActive ? 0.8 : 0.45))
+            .animation(.spring(response: 0.25, dampingFraction: 0.9), value: isActive)
         }
-        .buttonStyle(.pressable)
-        .disabled(!installed)
-        .onHover { hovering in
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.85)) { isHovering = hovering }
-        }
+        .onHover { isHovering = $0 }
     }
 }
 
-private struct ArtworkBackdrop: View {
-    let artwork: NSImage?
-    let accent: Color
+private struct ClipboardCard: View {
+    let item: ClipboardHistory.Item
+    let isCopied: Bool
+    let copy: () -> Void
+    let remove: () -> Void
+    @State private var isHovering = false
+
+    private var preview: String {
+        let flat = item.text.split(whereSeparator: \.isNewline).joined(separator: " ")
+        return String(flat.trimmingCharacters(in: .whitespaces).prefix(160))
+    }
+
+    private var symbol: String {
+        switch item.kind {
+        case .text: "text.alignleft"
+        case .link: "link"
+        case .image: "photo"
+        case .files: "doc"
+        }
+    }
 
     var body: some View {
-        ZStack {
-            accent.opacity(0.22)
-            if let artwork {
-                Image(nsImage: artwork)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .scaleEffect(1.5)
-                    .blur(radius: 30)
-                    .opacity(0.6)
+        Button(action: copy) {
+            HStack(spacing: 9) {
+                thumbnail
+                    .frame(width: 30, height: 30)
+                    .clipShape(.rect(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.kind == .image ? "Image" : preview)
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(item.kind == .link ? Color(hex: 0x64A8FF) : .white.opacity(0.9))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    HStack(spacing: 4) {
+                        if let icon = sourceIcon {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .frame(width: 11, height: 11)
+                        }
+                        Text(isCopied ? "Copied" : item.date.formatted(.relative(presentation: .named)))
+                            .font(.system(size: 10, weight: isCopied ? .semibold : .regular))
+                            .foregroundStyle(isCopied ? Color(hex: 0x34C759) : .white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
             }
-            LinearGradient(colors: [.black.opacity(0.1), .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+            .padding(7)
+            .frame(height: 52)
+            .background(.white.opacity(isCopied ? 0.12 : isHovering ? 0.1 : 0.055), in: .rect(cornerRadius: 11, style: .continuous))
+            .contentShape(.rect(cornerRadius: 11))
         }
-        .allowsHitTesting(false)
+        .buttonStyle(.pressable)
+        .overlay(alignment: .topTrailing) {
+            if isHovering {
+                Button(action: remove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 16, height: 16)
+                        .background(.white.opacity(0.16), in: .circle)
+                }
+                .buttonStyle(.plain)
+                .padding(5)
+                .help("Remove")
+                .transition(.opacity)
+            }
+        }
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
+        }
+        .animation(.easeOut(duration: 0.15), value: isCopied)
+        .help(item.kind == .image ? "Click to copy the image" : "Click to copy")
+    }
+
+    @ViewBuilder
+    private var thumbnail: some View {
+        if let image = item.image {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+        } else if item.kind == .files, let url = item.files.first {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path(percentEncoded: false)))
+                .resizable()
+        } else {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(.white.opacity(0.08))
+        }
+    }
+
+    private var sourceIcon: NSImage? {
+        guard let bundleID = item.sourceBundleID,
+              let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path(percentEncoded: false))
+    }
+}
+
+private struct TrayTile: View {
+    let item: FileTray.Item
+    let tray: FileTray
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Group {
+                if let image = tray.thumbnails[item.url] {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .aspectRatio(contentMode: .fit)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 58, height: 58)
+            .shadow(color: .black.opacity(0.3), radius: 4, y: 2)
+            Text(item.name)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .truncationMode(.middle)
+                .frame(height: 28, alignment: .top)
+        }
+        .frame(width: 84)
+        .padding(.vertical, 8)
+        .background(.white.opacity(isHovering ? 0.09 : 0), in: .rect(cornerRadius: 12, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            if isHovering {
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) { tray.remove(item) }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 18, height: 18)
+                        .background(.white.opacity(0.22), in: .circle)
+                }
+                .buttonStyle(.pressable)
+                .padding(4)
+                .help("Remove from Tray")
+                .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+        }
+        .contentShape(.rect(cornerRadius: 12))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
+        }
+        .onTapGesture(count: 2) { tray.open(item) }
+        .onDrag {
+            NSItemProvider(contentsOf: item.url) ?? NSItemProvider()
+        }
+        .contextMenu {
+            Button("Open") { tray.open(item) }
+            Button("Show in Finder") { tray.reveal(item) }
+            Divider()
+            Button("AirDrop") { tray.airDrop([item.url]) }
+            ShareLink(item: item.url)
+            Button("Copy") { tray.copy(item) }
+            Divider()
+            Button("Remove from Tray", role: .destructive) {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.9)) { tray.remove(item) }
+            }
+        }
+        .help(item.name)
+        .task(id: item.url) { await tray.loadThumbnail(for: item.url) }
     }
 }
 
 private extension View {
     func notchCard() -> some View {
-        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
-        return background(.white.opacity(0.06))
-            .clipShape(shape)
-            .overlay {
-                shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.14), .white.opacity(0.03)], startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
-            }
+        background(.white.opacity(0.055), in: .rect(cornerRadius: 18, style: .continuous))
+            .clipShape(.rect(cornerRadius: 18, style: .continuous))
     }
 }
 

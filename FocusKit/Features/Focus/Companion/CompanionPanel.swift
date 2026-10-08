@@ -85,7 +85,7 @@ struct CompanionPanel: View {
         .padding(isExpanded ? 20 : 16)
         .frame(width: panelWidth)
         .frame(maxWidth: panelMaxWidth, maxHeight: panelMaxHeight)
-        .background(.white.opacity(isExpanded ? 0.94 : 0.88), in: .rect(cornerRadius: 24))
+        .background(Palette.surface.opacity(isExpanded ? 0.94 : 0.88), in: .rect(cornerRadius: 24))
         .overlay(alignment: .leading) {
             if !isExpanded {
                 resizeEdge
@@ -159,7 +159,7 @@ struct CompanionPanel: View {
                     .lineSpacing(4)
             }
             .padding(8)
-            .background(.white.opacity(0.55), in: .rect(cornerRadius: 18))
+            .background(Palette.surface.opacity(0.55), in: .rect(cornerRadius: 18))
 
             HStack {
                 Text(kind == .writing ? "\(workspace.wordCount) words" : "Saved with this session")
@@ -210,7 +210,7 @@ struct CompanionPanel: View {
                 }
             }
             .padding(12)
-            .background(.white.opacity(0.55), in: .rect(cornerRadius: 18))
+            .background(Palette.surface.opacity(0.55), in: .rect(cornerRadius: 18))
             if let error = recorder.errorMessage {
                 Text(error)
                     .font(.rounded(11, weight: .medium))
@@ -269,7 +269,7 @@ struct CompanionPanel: View {
                             }
                             .padding(.vertical, 6)
                             .padding(.horizontal, 10)
-                            .background(.white.opacity(task.isDone ? 0.3 : 0.6), in: .rect(cornerRadius: 12))
+                            .background(Palette.surface.opacity(task.isDone ? 0.3 : 0.6), in: .rect(cornerRadius: 12))
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
@@ -303,7 +303,7 @@ struct CompanionPanel: View {
                         }
                         .padding(.vertical, 6)
                         .padding(.horizontal, 10)
-                        .background(.white.opacity(0.6), in: .rect(cornerRadius: 12))
+                        .background(Palette.surface.opacity(0.6), in: .rect(cornerRadius: 12))
                         .transition(.move(edge: .top).combined(with: .opacity))
                     }
                 }
@@ -329,7 +329,7 @@ struct CompanionPanel: View {
         }
         .padding(.horizontal, 12)
         .frame(height: 36)
-        .background(.white.opacity(0.7), in: .capsule)
+        .background(Palette.surface.opacity(0.7), in: .capsule)
     }
 }
 

@@ -13,6 +13,11 @@ build: project
 
 run: project
 	$(XCODEBUILD) -configuration Debug build
+	@if [ -f signing/build.keychain-db ] && [ -f signing/p12-password.txt ]; then \
+		security unlock-keychain -p "$$(cat signing/p12-password.txt)" "$(CURDIR)/signing/build.keychain-db" && \
+		codesign --force --deep --keychain "$(CURDIR)/signing/build.keychain-db" --sign "FocusKit Signing" \
+			--entitlements FocusKit/Resources/FocusKit.entitlements "$(call PRODUCTS,Debug)"; \
+	fi
 	pkill -x FocusKit || true
 	open "$$(xcodebuild -project FocusKit.xcodeproj -scheme FocusKit -configuration Debug -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $$2}')/FocusKit.app"
 

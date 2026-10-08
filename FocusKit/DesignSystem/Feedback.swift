@@ -51,7 +51,7 @@ struct ErrorBanner: View {
         }
         .padding(14)
         .frame(maxWidth: 460)
-        .background(.white, in: .rect(cornerRadius: 18))
+        .background(Palette.surface, in: .rect(cornerRadius: 18))
         .shadow(color: .black.opacity(0.08), radius: 14, y: 6)
         .padding(24)
     }
