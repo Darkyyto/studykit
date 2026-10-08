@@ -102,30 +102,24 @@ final class Updater {
         if case .downloading = state { return }
         state = .checking
         do {
-            var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.repository)/releases/latest")!)
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            request.timeoutInterval = 20
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-                state = .failed("No published release was found.")
+            guard let latest = try await Self.latest() else {
+                state = .failed("GitHub is not responding right now. Try again in a few minutes.")
                 return
             }
-            let payload = try JSONDecoder().decode(Payload.self, from: data)
-            let version = payload.tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            let version = latest.version
             UserDefaults.standard.set(Date.now, forKey: Self.lastCheckKey)
             lastChecked = .now
 
             guard
                 Self.isNewer(version, than: Self.currentVersion),
-                userInitiated || UserDefaults.standard.string(forKey: Self.skippedKey) != version,
-                let asset = payload.assets.first(where: { $0.name.hasSuffix(".dmg") }),
-                let diskImage = URL(string: asset.browser_download_url),
-                let page = URL(string: payload.html_url)
+                userInitiated || UserDefaults.standard.string(forKey: Self.skippedKey) != version
             else {
                 state = .upToDate
                 return
             }
-            let body = payload.body ?? ""
+            let diskImage = latest.diskImage
+            let page = latest.page
+            let body = latest.notes
             let silent = body.contains("<!-- silent -->")
             let notes = body.replacingOccurrences(of: "<!-- silent -->", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
             let release = Release(version: version, notes: notes, diskImage: diskImage, page: page, isSilent: silent)
@@ -147,6 +141,45 @@ final class Updater {
         } catch {
             state = userInitiated ? .failed("Could not reach GitHub. Check your connection and try again.") : .idle
         }
+    }
+
+    private struct Latest {
+        let version: String
+        let notes: String
+        let diskImage: URL
+        let page: URL
+    }
+
+    private struct Manifest: Decodable {
+        let version: String
+        let notes: String
+        let dmg: String
+        let page: String
+    }
+
+    private static func latest() async throws -> Latest? {
+        var manifest = URLRequest(url: URL(string: "https://github.com/\(repository)/releases/latest/download/update.json")!)
+        manifest.timeoutInterval = 15
+        manifest.cachePolicy = .reloadIgnoringLocalCacheData
+        if let (data, response) = try? await URLSession.shared.data(for: manifest),
+           (response as? HTTPURLResponse)?.statusCode == 200,
+           let decoded = try? JSONDecoder().decode(Manifest.self, from: data),
+           let diskImage = URL(string: decoded.dmg),
+           let page = URL(string: decoded.page) {
+            return Latest(version: decoded.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), notes: decoded.notes, diskImage: diskImage, page: page)
+        }
+        var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.timeoutInterval = 15
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        let payload = try JSONDecoder().decode(Payload.self, from: data)
+        guard
+            let asset = payload.assets.first(where: { $0.name.hasSuffix(".dmg") }),
+            let diskImage = URL(string: asset.browser_download_url),
+            let page = URL(string: payload.html_url)
+        else { return nil }
+        return Latest(version: payload.tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), notes: payload.body ?? "", diskImage: diskImage, page: page)
     }
 
     @discardableResult

@@ -46,8 +46,28 @@ jobs:
           echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
       - name: Build disk image
         run: make dmg
+      - name: Write update manifest
+        run: |
+          python3 - <<'EOF'
+          import json, os
+          tag = os.environ["GITHUB_REF_NAME"]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          version = tag.lstrip("vV")
+          with open(".github/release-notes.md") as notes:
+              body = notes.read()
+          manifest = {
+              "version": version,
+              "notes": body,
+              "dmg": f"https://github.com/{repo}/releases/download/{tag}/FocusKit-{version}.dmg",
+              "page": f"https://github.com/{repo}/releases/tag/{tag}",
+          }
+          with open("dist/update.json", "w") as out:
+              json.dump(manifest, out)
+          EOF
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
+          files: |
+            dist/*.dmg
+            dist/update.json
           body_path: .github/release-notes.md
