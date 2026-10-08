@@ -133,14 +133,7 @@ struct RootView: View {
                 .opacity(showsChrome ? 1 : 0)
                 .offset(y: showsChrome ? 0 : -28)
                 .allowsHitTesting(showsChrome)
-
-            if let phase = updater.launchPhase {
-                LaunchUpdateView(phase: phase)
-                    .transition(.opacity)
-                    .zIndex(10)
-            }
         }
-        .animation(Motion.standard, value: updater.launchPhase)
         .onContinuousHover { phase in
             guard isImmersive else { return }
             let reveal = if case .active(let point) = phase { point.y < 64 || (revealsChrome && point.y < 96) } else { false }
@@ -454,58 +447,3 @@ private struct UpdateBanner: View {
     }
 }
 
-private struct LaunchUpdateView: View {
-    let phase: Updater.LaunchPhase
-    @Environment(Updater.self) private var updater
-
-    private var fraction: Double? {
-        if case .downloading(let value) = updater.state { return value }
-        return nil
-    }
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .frame(width: 72, height: 72)
-            VStack(spacing: 4) {
-                Text(title)
-                    .font(.rounded(17, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .contentTransition(.opacity)
-                Text(detail)
-                    .font(.rounded(13))
-                    .foregroundStyle(Palette.inkSecondary)
-            }
-            Group {
-                if let fraction {
-                    ProgressView(value: fraction)
-                        .progressViewStyle(.linear)
-                } else {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                }
-            }
-            .tint(FocusMode.flight.palette.deep)
-            .frame(width: 180)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.canvas)
-        .ignoresSafeArea()
-        .animation(Motion.standard, value: phase)
-    }
-
-    private var title: String {
-        switch phase {
-        case .checking: "Checking for updates"
-        case .updating: "Updating FocusKit"
-        }
-    }
-
-    private var detail: String {
-        switch phase {
-        case .checking: "Just a moment."
-        case .updating(let version): "Installing \(version). FocusKit will reopen by itself."
-        }
-    }
-}

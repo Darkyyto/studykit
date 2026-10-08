@@ -27,10 +27,11 @@ struct FocusKitApp: App {
         _recorder = State(initialValue: recorder)
         _nowPlaying = State(initialValue: nowPlaying)
         _soundscape = State(initialValue: soundscape)
-        _island = State(initialValue: IslandController(engine: engine, recorder: recorder, library: library, nowPlaying: nowPlaying, soundscape: soundscape, enhancer: enhancer))
+        let island = IslandController(engine: engine, recorder: recorder, library: library, nowPlaying: nowPlaying, soundscape: soundscape, enhancer: enhancer)
+        _island = State(initialValue: island)
         let updater = Updater()
         _updater = State(initialValue: updater)
-        updater.canRestart = { !engine.isActive && !recorder.isActive }
+        updater.canRestart = { !engine.isActive && !recorder.isActive && island.isAtRest && island.tray.urls.isEmpty }
         AppDelegate.beforeTerminate = {
             if engine.isActive {
                 engine.stop()

@@ -838,7 +838,11 @@ private struct UpdatesPane: View {
         VStack(alignment: .leading, spacing: 10) {
             SettingsCard {
                 SettingsRow(title: "FocusKit \(Updater.currentVersion)", detail: status, symbol: "arrow.down.circle.fill", tint: FocusMode.flight.palette.deep) {
-                    if case .downloading(let fraction) = updater.state {
+                    if updater.isQuiet {
+                        Button("Check Now") { Task { await updater.check(userInitiated: true) } }
+                            .buttonStyle(.glass)
+                            .buttonBorderShape(.capsule)
+                    } else if case .downloading(let fraction) = updater.state {
                         ProgressView(value: fraction)
                             .progressViewStyle(.linear)
                             .frame(width: 140)
@@ -867,7 +871,7 @@ private struct UpdatesPane: View {
                         .labelsHidden()
                         .onChange(of: checksAutomatically) { _, value in updater.checksAutomatically = value }
                 }
-                SettingsRow(title: "Install small fixes automatically", detail: "Quietly, while your Mac is idle or when you quit.", symbol: "sparkles", tint: FocusMode.orbit.palette.deep) {
+                SettingsRow(title: "Install small fixes automatically", detail: "In the background, without interrupting you.", symbol: "sparkles", tint: FocusMode.orbit.palette.deep) {
                     Toggle("", isOn: $installsFixes)
                         .toggleStyle(.switch)
                         .labelsHidden()
@@ -892,7 +896,8 @@ private struct UpdatesPane: View {
     }
 
     private var status: String {
-        switch updater.state {
+        if updater.isQuiet { return "You have the latest version." }
+        return switch updater.state {
         case .checking: "Checking…"
         case .upToDate: "You have the latest version."
         case .available(let release): "Version \(release.version) is available."

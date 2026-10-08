@@ -1,2 +1,5 @@
-<!-- silent -->
-- Updates download and install in a couple of seconds
+- Small fixes now install by themselves in the background, without interrupting you. You can turn this off in Settings › Updates.
+- Updates download and install in seconds
+- Focus modes and Low Power Mode in the notch
+- A tidier notch and a redesigned Journal
+- New About page in Settings

@@ -297,19 +297,14 @@ final class IslandController {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
-        announceQuietUpdate()
     }
 
     private var screen: NSScreen? {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
     }
 
-    private func announceQuietUpdate() {
-        guard let version = Updater.takeQuietUpdateNotice() else { return }
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2))
-            self?.announce("Updated", detail: "FocusKit \(version)", symbol: "checkmark.circle.fill", tint: Color(hex: 0x34C759), fromSystem: true)
-        }
+    var isAtRest: Bool {
+        shape == .hidden || shape == .compact
     }
 
     private func unlocked() {

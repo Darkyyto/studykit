@@ -33,16 +33,10 @@ final class Updater {
     @ObservationIgnored private var quietTimer: Timer?
     @ObservationIgnored private var quietUpdate: URL?
     @ObservationIgnored var canRestart: (@MainActor () -> Bool)?
+    @ObservationIgnored private var periodicCheck: Timer?
     private(set) var isQuiet = false
-    private(set) var launchPhase: LaunchPhase?
-
-    enum LaunchPhase: Equatable {
-        case checking
-        case updating(String)
-    }
 
     static let installsFixesKey = "installsFixesAutomatically"
-    static let updatedFromKey = "quietlyUpdatedFrom"
 
     var installsFixesAutomatically: Bool {
         get { UserDefaults.standard.object(forKey: Self.installsFixesKey) as? Bool ?? true }
@@ -83,20 +77,18 @@ final class Updater {
             try? FileManager.default.removeItem(at: Self.failureMarker)
             wasBlocked = true
         }
-        guard (checksAutomatically || wasBlocked), isConfigured else { return }
-        guard UserDefaults.standard.string(forKey: Self.updatedFromKey) == nil else {
+        guard isConfigured else { return }
+        if checksAutomatically || wasBlocked {
             Task { await check(userInitiated: false) }
-            return
         }
-        launchPhase = .checking
-        Task {
-            await check(userInitiated: false)
-            if !isQuiet { launchPhase = nil }
+        periodicCheck?.invalidate()
+        periodicCheck = Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.checksAutomatically, self.quietUpdate == nil, self.download == nil else { return }
+                Task { await self.check(userInitiated: false) }
+            }
         }
-        Task {
-            try? await Task.sleep(for: .seconds(25))
-            launchPhase = nil
-        }
+        periodicCheck?.tolerance = 600
     }
 
     func check(userInitiated: Bool) async {
@@ -136,7 +128,6 @@ final class Updater {
             state = .available(release)
             pending = release
             if isQuiet {
-                if launchPhase != nil { launchPhase = .updating(version) }
                 install(release)
                 return
             }
@@ -274,30 +265,20 @@ final class Updater {
         }
     }
 
-    private func applyNow(_ url: URL) -> Bool {
-        UserDefaults.standard.set(Self.currentVersion, forKey: Self.updatedFromKey)
-        guard launchInstaller(url, relaunch: AppDelegate.isQuietLaunch ? .quiet : .open) else {
-            UserDefaults.standard.removeObject(forKey: Self.updatedFromKey)
-            return false
-        }
-        NSApp.terminate(nil)
-        return true
-    }
-
     func installBeforeQuitting() {
         guard let quietUpdate else { return }
         stopWaitingQuietly()
-        UserDefaults.standard.set(Self.currentVersion, forKey: Self.updatedFromKey)
         launchInstaller(quietUpdate, relaunch: .none)
     }
 
     private func waitQuietly(with url: URL) {
         quietUpdate = url
         quietTimer?.invalidate()
-        quietTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        quietTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.installIfQuiet() }
         }
-        quietTimer?.tolerance = 20
+        quietTimer?.tolerance = 5
+        installIfQuiet()
     }
 
     private func stopWaitingQuietly() {
@@ -308,23 +289,13 @@ final class Updater {
 
     private func installIfQuiet() {
         guard let quietUpdate, installsFixesAutomatically, canRestart?() ?? false else { return }
-        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
-        guard LockScreen.isLocked || idle > 15 * 60 else { return }
         let showsWindow = NSApp.windows.contains { $0.isVisible && $0.identifier?.rawValue.hasPrefix("main") == true }
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
+        guard !showsWindow || LockScreen.isLocked || idle > 120 else { return }
         stopWaitingQuietly()
-        UserDefaults.standard.set(Self.currentVersion, forKey: Self.updatedFromKey)
         if launchInstaller(quietUpdate, relaunch: showsWindow ? .background : .quiet) {
             NSApp.terminate(nil)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Self.updatedFromKey)
         }
-    }
-
-    static func takeQuietUpdateNotice() -> String? {
-        let defaults = UserDefaults.standard
-        guard let previous = defaults.string(forKey: updatedFromKey) else { return nil }
-        defaults.removeObject(forKey: updatedFromKey)
-        return isNewer(currentVersion, than: previous) ? currentVersion : nil
     }
 
     nonisolated private static func plainPath(_ url: URL) -> String {
@@ -414,21 +385,17 @@ final class Updater {
                 } else {
                     let staged = try await archive == nil ? Self.stage(destination, in: work) : Self.unpack(destination, in: work)
                     state = .ready(staged)
-                    if checkPermission(), isQuiet {
-                        if launchPhase != nil, canRestart?() ?? true, applyNow(staged) {
-                            return
+                    if isQuiet {
+                        if checkPermission() {
+                            waitQuietly(with: staged)
                         }
-                        launchPhase = nil
-                        waitQuietly(with: staged)
                         return
                     }
                 }
-                launchPhase = nil
                 isQuiet = false
                 presented = release
             } catch {
                 guard !isQuiet else {
-                    launchPhase = nil
                     isQuiet = false
                     state = .idle
                     pending = nil
