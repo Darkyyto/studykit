@@ -176,7 +176,9 @@ struct SessionView: View {
                     isPaused: engine.isPaused,
                     insets: EdgeInsets(top: chromeInset + 24, leading: 60, bottom: 330, trailing: 60)
                 )
-                .mask(LinearGradient(stops: [.init(color: .black, location: 0.62), .init(color: .clear, location: 0.7)], startPoint: .top, endPoint: .bottom))
+                .overlay {
+                    BottomFade(start: 0.52)
+                }
                 .transition(.opacity)
             }
         }

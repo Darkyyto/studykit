@@ -69,6 +69,12 @@ final class IslandController {
     static let offsetKey = "notchOffset"
     static let heightKey = "notchHeightAdjustment"
     static let previewNotification = Notification.Name("FocusKitNotchPreview")
+    static let hapticsKey = "notchHaptics"
+
+    static func tap() {
+        guard UserDefaults.standard.object(forKey: hapticsKey) as? Bool ?? true else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+    }
     @ObservationIgnored private var restingDragCount = NSPasteboard(name: .drag).changeCount
     @ObservationIgnored private var wasPressed = false
 
@@ -103,6 +109,8 @@ final class IslandController {
     @ObservationIgnored private let library: Library
     let systemHUD = SystemHUD()
     static let hudWing: CGFloat = 136
+    static let peekWing: CGFloat = 64
+    static let peekLine: CGFloat = 30
 
     init(engine: FocusEngine, recorder: VoiceRecorder, library: Library, nowPlaying: NowPlaying, soundscape: Soundscape, enhancer: NoteEnhancer) {
         self.engine = engine
@@ -140,6 +148,11 @@ final class IslandController {
         observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleRefresh() }
         })
+        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                MainActor.assumeIsolated { self?.unlocked() }
+            }
+        })
         observers.append(center.addObserver(forName: Self.previewNotification, object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated { self?.preview() }
@@ -164,7 +177,8 @@ final class IslandController {
         switch shape {
         case .hidden: return base
         case .compact: return hasActivity ? CGSize(width: base.width + wing * 2, height: base.height) : base
-        case .peek, .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
+        case .peek: return CGSize(width: max(base.width, 160) + Self.peekWing * 2, height: base.height + Self.peekLine)
+        case .hud: return CGSize(width: max(base.width, 160) + Self.hudWing * 2, height: base.height)
         case .expanded: return CGSize(width: Self.expandedSize.width, height: base.height + Self.expandedSize.height + (tab == .calendar ? 24 : 0))
         }
     }
@@ -172,7 +186,8 @@ final class IslandController {
     var bottomRadius: CGFloat {
         switch shape {
         case .hidden, .compact: (notch.height * 0.3).rounded()
-        case .peek, .hud: (notch.height * 0.4).rounded()
+        case .peek: 18
+        case .hud: (notch.height * 0.4).rounded()
         case .expanded: 30
         }
     }
@@ -288,6 +303,11 @@ final class IslandController {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main
     }
 
+    private func unlocked() {
+        guard isInstalled, LockScreen.isOn(LockScreen.notchKey) else { return }
+        announce("Unlocked", detail: "", symbol: "lock.open.fill", tint: Color(hex: 0x34C759), fromSystem: true)
+    }
+
     func preview() {
         guard isInstalled else { return }
         previewTask?.cancel()
@@ -369,6 +389,7 @@ final class IslandController {
                 }
                 self.nowPlaying.refreshIfNeeded()
                 self.transition(to: .expanded)
+                Self.tap()
             }
         }
     }

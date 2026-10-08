@@ -2,11 +2,11 @@ import SwiftUI
 
 extension Font {
     static func rounded(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .rounded)
+        .system(size: size, weight: weight)
     }
 
     static func numeric(_ size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .rounded).monospacedDigit()
+        .system(size: size, weight: weight).monospacedDigit()
     }
 }
 

@@ -34,6 +34,7 @@ struct FlightMapScene: View {
     @Environment(\.isOnScreen) private var isOnScreen
     @State private var position: MapCameraPosition = .automatic
     @State private var follows = false
+    @State private var cruiseTrigger = 0
 
     private let palette = FocusMode.flight.palette
 
@@ -55,22 +56,18 @@ struct FlightMapScene: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            map
+                .safeAreaPadding(.bottom, 250)
+            BottomFade(start: 0.48)
             VStack(spacing: 0) {
                 ZStack {
-                    map
                     if follows {
                         Cruise(tint: palette.deep, isPaused: isPaused || isArrived)
                             .allowsHitTesting(false)
                             .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     }
                 }
-                .mask(
-                    LinearGradient(
-                        stops: [.init(color: .black, location: 0.75), .init(color: .clear, location: 1)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Color.clear
                     .frame(height: 250)
             }
@@ -84,21 +81,10 @@ struct FlightMapScene: View {
             .padding(.horizontal, 20)
         }
         .onAppear(perform: introduce)
-        .background {
-            TimelineView(.animation(minimumInterval: FrameRate.interval(active: appearsActive), paused: !follows || isPaused || isArrived || !isOnScreen)) { context in
-                Color.clear
-                    .onChange(of: context.date) { _, date in
-                        guard follows, !isArrived else { return }
-                        position = .camera(camera(at: date))
-                    }
-            }
-        }
-        .onChange(of: isPaused) { follow(animated: false) }
-        .onChange(of: isOnScreen) { _, visible in
-            if visible { follow(animated: false) }
-        }
-        .onChange(of: appearsActive) { follow(animated: false) }
+        .onChange(of: isPaused) { cruiseTrigger += 1 }
+        .onChange(of: isOnScreen) { cruiseTrigger += 1 }
         .onChange(of: isArrived) { _, arrived in
+            cruiseTrigger += 1
             if arrived { overview(animated: true) }
         }
     }
@@ -126,11 +112,11 @@ struct FlightMapScene: View {
             MapPolyline(coordinates: origin.path(towards: destination, through: max(0.001, progress)))
                 .stroke(palette.deep, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
 
-            Annotation(origin.city, coordinate: origin.coordinate) {
+            Annotation(origin.city, coordinate: origin.coordinate, anchor: .center) {
                 CityPin(code: origin.code, city: origin.city, isDestination: false)
             }
             .annotationTitles(.hidden)
-            Annotation(destination.city, coordinate: destination.coordinate) {
+            Annotation(destination.city, coordinate: destination.coordinate, anchor: .center) {
                 CityPin(code: destination.code, city: destination.city, isDestination: true)
             }
             .annotationTitles(.hidden)
@@ -148,6 +134,24 @@ struct FlightMapScene: View {
             ? .standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll)
             : .imagery(elevation: .flat))
         .mapControlVisibility(.hidden)
+        .mapCameraKeyframeAnimator(trigger: cruiseTrigger) { _ in
+            let steps = cruiseSteps()
+            KeyframeTrack(\MapCamera.centerCoordinate) {
+                for step in steps {
+                    LinearKeyframe(step.camera.centerCoordinate, duration: step.duration)
+                }
+            }
+            KeyframeTrack(\MapCamera.heading) {
+                for step in steps {
+                    LinearKeyframe(step.camera.heading, duration: step.duration)
+                }
+            }
+            KeyframeTrack(\MapCamera.distance) {
+                for step in steps {
+                    LinearKeyframe(step.camera.distance, duration: step.duration)
+                }
+            }
+        }
         .allowsHitTesting(false)
     }
 
@@ -155,9 +159,9 @@ struct FlightMapScene: View {
         camera(at: tick)
     }
 
-    private func camera(at date: Date) -> MapCamera {
+    private func camera(at date: Date, zoom: Double = 1) -> MapCamera {
         let fraction = min(1, max(0, progressAt(date)))
-        let distance = min(900_000, max(30_000, routeKilometers * 1000 * 0.38))
+        let distance = min(900_000, max(30_000, routeKilometers * 1000 * 0.38)) * zoom
         return MapCamera(
             centerCoordinate: origin.coordinate(towards: destination, fraction: fraction),
             distance: distance,
@@ -167,23 +171,38 @@ struct FlightMapScene: View {
     }
 
     private func introduce() {
-        overview(animated: false)
-        guard !isArrived else { return }
+        guard !isArrived else {
+            overview(animated: false)
+            return
+        }
+        follows = true
+        guard !reduceMotion else {
+            position = .camera(camera(at: .now))
+            return
+        }
+        position = .camera(camera(at: .now, zoom: 3))
         Task {
-            try? await Task.sleep(for: .seconds(1.6))
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 2.8)) {
-                position = .camera(camera(at: .now.addingTimeInterval(2.8)))
+            try? await Task.sleep(for: .milliseconds(300))
+            withAnimation(.easeInOut(duration: 2.6)) {
+                position = .camera(camera(at: .now.addingTimeInterval(2.6)))
             }
-            try? await Task.sleep(for: .seconds(2.9))
-            withAnimation(.easeOut(duration: 0.3)) { follows = true }
+            try? await Task.sleep(for: .seconds(2.7))
+            cruiseTrigger += 1
         }
     }
 
-    private func follow(animated: Bool) {
-        guard follows, !isArrived else { return }
-        withAnimation(animated && !reduceMotion ? .linear(duration: 1) : nil) {
-            position = .camera(camera(at: .now))
+    private func cruiseSteps() -> [(camera: MapCamera, duration: Double)] {
+        let now = Date.now
+        let start = (camera: camera(at: now), duration: 0.35)
+        guard follows, !isArrived, !isPaused, isOnScreen, !reduceMotion else { return [start] }
+        var steps = [start]
+        var date = now
+        for _ in 0..<720 {
+            date = date.addingTimeInterval(30)
+            steps.append((camera(at: date), 30))
+            if progressAt(date) >= 1 { break }
         }
+        return steps
     }
 
     private func overview(animated: Bool) {
@@ -201,63 +220,14 @@ struct FlightMapScene: View {
 private struct Cruise: View {
     let tint: Color
     let isPaused: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.appearsActive) private var appearsActive
-    @Environment(\.isOnScreen) private var isOnScreen
-    @State private var start = Date.now
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: FrameRate.interval(active: appearsActive), paused: isPaused || reduceMotion || !isOnScreen)) { context in
-            let t = reduceMotion ? 0 : context.date.timeIntervalSince(start)
-            ZStack {
-                Clouds(time: t)
-                Contrails()
-                    .frame(width: 84, height: 220)
-                    .offset(y: 126)
-                Airliner(tint: tint, altitude: 1)
-                    .frame(width: 84, height: 84)
-                    .rotationEffect(.degrees(sin(t * 0.55) * 1.4 + sin(t * 1.3) * 0.4))
-                    .offset(x: sin(t * 0.37) * 2, y: sin(t * 0.8) * 1.6)
-            }
-        }
-    }
-}
-
-private struct Clouds: View {
-    let time: Double
-
-    private static let puffs: [(x: Double, y: Double, scale: Double, speed: Double)] = (0..<8).map { index in
-        let seed = Double(index)
-        return (
-            x: (sin(seed * 12.9898) * 43_758.5453).truncatingRemainder(dividingBy: 1).magnitude,
-            y: Double(index) / 8,
-            scale: 0.7 + (sin(seed * 78.233) * 12_345.678).truncatingRemainder(dividingBy: 1).magnitude * 0.8,
-            speed: 0.85 + (seed.truncatingRemainder(dividingBy: 3)) * 0.12
-        )
-    }
-
-    var body: some View {
-        Canvas { context, size in
-            let span = size.height + 240
-            for puff in Self.puffs {
-                let travel = (puff.y * span + time * 26 * puff.speed).truncatingRemainder(dividingBy: span)
-                let center = CGPoint(x: puff.x * size.width, y: travel - 120)
-                let width = 150 * puff.scale
-                for (dx, dy, r) in [(-0.32, 0.06, 0.55), (0.0, -0.08, 0.7), (0.34, 0.04, 0.5)] {
-                    let radius = width * r
-                    let origin = CGPoint(x: center.x + width * dx, y: center.y + width * dy)
-                    let rect = CGRect(x: origin.x - radius, y: origin.y - radius * 0.62, width: radius * 2, height: radius * 1.24)
-                    context.fill(
-                        Ellipse().path(in: rect),
-                        with: .radialGradient(
-                            Gradient(colors: [.white.opacity(0.42), .white.opacity(0.14), .white.opacity(0)]),
-                            center: origin,
-                            startRadius: 0,
-                            endRadius: radius
-                        )
-                    )
-                }
-            }
+        ZStack {
+            Contrails()
+                .frame(width: 84, height: 150)
+                .offset(y: 92)
+            Airliner(tint: tint, altitude: 1)
+                .frame(width: 84, height: 84)
         }
     }
 }
@@ -268,8 +238,8 @@ private struct Contrails: View {
             for x in [size.width * 0.3, size.width * 0.7] {
                 let gradient = Gradient(stops: [
                     .init(color: .white.opacity(0), location: 0),
-                    .init(color: .white.opacity(0.9), location: 0.08),
-                    .init(color: .white.opacity(0.35), location: 0.55),
+                    .init(color: .white.opacity(0.55), location: 0.08),
+                    .init(color: .white.opacity(0.15), location: 0.45),
                     .init(color: .white.opacity(0), location: 1),
                 ])
                 var path = Path()
@@ -282,7 +252,7 @@ private struct Contrails: View {
                         startPoint: .zero,
                         endPoint: CGPoint(x: 0, y: size.height)
                     ),
-                    style: StrokeStyle(lineWidth: 2.5, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 1.75, lineCap: .round)
                 )
             }
         }
@@ -394,23 +364,30 @@ private struct CityPin: View {
     let isDestination: Bool
 
     var body: some View {
-        VStack(spacing: 4) {
-            Circle()
-                .fill(isDestination ? FocusMode.flight.palette.deep : Palette.ink)
-                .frame(width: 10, height: 10)
-                .overlay(Circle().stroke(.white, lineWidth: 2.5))
-                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-            VStack(spacing: 0) {
-                Text(code)
-                    .font(.rounded(12, weight: .bold))
-                    .foregroundStyle(Palette.ink)
-                Text(city)
-                    .font(.rounded(10, weight: .semibold))
-                    .foregroundStyle(Palette.inkSecondary)
+        Circle()
+            .fill(isDestination ? FocusMode.flight.palette.deep : Palette.ink)
+            .frame(width: 10, height: 10)
+            .overlay(Circle().stroke(Palette.surface, lineWidth: 2.5))
+            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+            .overlay(alignment: .top) {
+                if isDestination {
+                    HStack(spacing: 5) {
+                        Text(code)
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(Palette.ink)
+                        Text(city)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Palette.inkSecondary)
+                    }
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 9)
+                    .frame(height: 22)
+                    .background(.regularMaterial, in: .capsule)
+                    .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
+                    .offset(y: 16)
+                }
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.white.opacity(0.9), in: .rect(cornerRadius: 8))
-        }
     }
 }

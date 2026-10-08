@@ -137,3 +137,16 @@ struct IconButton: View {
         .glassEffect(.regular.tint(tint).interactive(), in: .circle)
     }
 }
+
+struct BottomFade: View {
+    var start = 0.5
+
+    var body: some View {
+        LinearGradient(
+            stops: [.init(color: Palette.canvas.opacity(0), location: start), .init(color: Palette.canvas.opacity(0.55), location: 1)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .allowsHitTesting(false)
+    }
+}

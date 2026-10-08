@@ -3,6 +3,7 @@ import SwiftUI
 
 struct JournalScreen: View {
     @Environment(Library.self) private var library
+    @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
 
     private var stats: JournalStats {
         JournalStats(sessions: library.sessions)
@@ -10,108 +11,192 @@ struct JournalScreen: View {
 
     var body: some View {
         let stats = stats
+        let accent = mode.tone
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 28) {
                 ScreenTitle(title: "Journal", subtitle: "How your focus has been adding up.")
 
-                HStack(spacing: 16) {
-                    tile(label: "Total focus", value: stats.total.hours, unit: "h", symbol: "hourglass", tint: FocusMode.orbit.palette.deep)
-                    tile(label: "This week", value: "\(Int(stats.thisWeek / 60))", unit: "min", symbol: "calendar", tint: FocusMode.flight.palette.deep)
-                    tile(label: "Streak", value: "\(stats.streak)", unit: stats.streak == 1 ? "day" : "days", symbol: "flame.fill", tint: Palette.rest.deep)
-                    tile(label: "Completed", value: "\(stats.completionRate)", unit: "%", symbol: "checkmark.seal.fill", tint: FocusMode.bloom.palette.deep)
+                HStack(alignment: .top, spacing: 16) {
+                    JournalCard(padding: 22) {
+                        WeekChart(days: stats.lastSevenDays, thisWeek: stats.thisWeek, accent: accent)
+                    }
+                    VStack(spacing: 12) {
+                        metric("Streak", value: "\(stats.streak)", unit: stats.streak == 1 ? "day" : "days", symbol: "flame.fill", tint: Palette.rest.deep)
+                        metric("All Time", value: stats.total.hours, unit: "h", symbol: "hourglass", tint: accent)
+                        metric("Completed", value: "\(stats.completionRate)", unit: "%", symbol: "checkmark.circle.fill", tint: FocusMode.bloom.tone)
+                    }
+                    .frame(width: 230)
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 HStack(alignment: .top, spacing: 16) {
-                    GlassCard(radius: 30, padding: 22) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("Last 7 days")
-                                .font(.rounded(16, weight: .bold))
-                                .foregroundStyle(Palette.ink)
-                            WeekChart(days: stats.lastSevenDays)
-                                .frame(height: 170)
-                        }
-                    }
-                    GlassCard(radius: 30, padding: 22) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("By mode")
-                                .font(.rounded(16, weight: .bold))
-                                .foregroundStyle(Palette.ink)
+                    section("By Mode") {
+                        JournalCard {
                             ModeBreakdown(minutes: stats.minutesByMode)
                         }
                     }
-                    .frame(width: 300)
-                }
-
-                GlassCard(radius: 30, padding: 22) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Text("Last 20 weeks")
-                                .font(.rounded(16, weight: .bold))
-                                .foregroundStyle(Palette.ink)
-                            Spacer()
-                            Text("\(stats.completed) completed · \(stats.stopped) ended early")
-                                .font(.rounded(12, weight: .medium))
-                                .foregroundStyle(Palette.inkSecondary)
+                    .frame(width: 330)
+                    section("Activity") {
+                        JournalCard {
+                            FocusHeatmap(minutesByDay: stats.minutesByDay, tint: accent)
                         }
-                        FocusHeatmap(minutesByDay: stats.minutesByDay)
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
 
                 history
             }
+            .frame(maxWidth: 980, alignment: .leading)
             .padding(.horizontal, 44)
             .padding(.top, 84)
-            .padding(.bottom, 36)
+            .padding(.bottom, 44)
+            .frame(maxWidth: .infinity)
         }
         .scrollIndicators(.never)
-
     }
 
-    private func tile(label: String, value: String, unit: String, symbol: String, tint: Color) -> some View {
-        GlassCard(radius: 26, padding: 18) {
-            VStack(alignment: .leading, spacing: 14) {
+    private func metric(_ label: String, value: String, unit: String, symbol: String, tint: Color) -> some View {
+        JournalCard(padding: 16) {
+            HStack(spacing: 12) {
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .background(tint.gradient, in: .circle)
-                Stat(label: label, value: value, unit: unit, size: 26)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.rounded(12, weight: .medium))
+                        .foregroundStyle(Palette.inkSecondary)
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text(value)
+                            .font(.numeric(22, weight: .semibold))
+                            .foregroundStyle(Palette.ink)
+                            .contentTransition(.numericText())
+                        Text(unit)
+                            .font(.rounded(13, weight: .medium))
+                            .foregroundStyle(Palette.inkSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
             }
+        }
+    }
+
+    private func section<Content: View>(_ title: String, detail: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.rounded(17, weight: .semibold))
+                    .foregroundStyle(Palette.ink)
+                Spacer()
+                if let detail {
+                    Text(detail)
+                        .font(.rounded(12, weight: .medium))
+                        .foregroundStyle(Palette.inkSecondary)
+                }
+            }
+            .padding(.horizontal, 4)
+            content()
         }
     }
 
     private var history: some View {
-        GlassCard(radius: 30, padding: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Sessions")
-                    .font(.rounded(16, weight: .bold))
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    .padding(.bottom, 6)
-
-                let sessions = library.sessions.sorted { $0.startedAt > $1.startedAt }
-                if sessions.isEmpty {
+        let sessions = library.sessions.sorted { $0.startedAt > $1.startedAt }
+        let days = Dictionary(grouping: sessions) { Calendar.current.startOfDay(for: $0.startedAt) }
+            .sorted { $0.key > $1.key }
+        return section("Sessions", detail: sessions.isEmpty ? nil : "\(sessions.count) total") {
+            if sessions.isEmpty {
+                JournalCard {
                     Text("Your finished sessions will appear here.")
-                        .font(.rounded(14, weight: .medium))
+                        .font(.rounded(13, weight: .medium))
                         .foregroundStyle(Palette.inkSecondary)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 40)
-                } else {
-                    LazyVStack(spacing: 2) {
-                        ForEach(sessions) { session in
-                            SessionRow(session: session, goal: library.goal(session.goalID))
-                                .contextMenu {
-                                    Button("Remove from Journal", role: .destructive) {
-                                        withAnimation(Motion.standard) { library.delete(session) }
+                        .padding(.vertical, 28)
+                }
+            } else {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(days, id: \.key) { day, entries in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text(dayTitle(day))
+                                Spacer()
+                                Text(entries.reduce(0) { $0 + $1.focused }.compactDuration)
+                                    .monospacedDigit()
+                            }
+                            .font(.rounded(12, weight: .semibold))
+                            .foregroundStyle(Palette.inkSecondary)
+                            .padding(.horizontal, 6)
+
+                            JournalCard(padding: 0) {
+                                VStack(spacing: 0) {
+                                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, session in
+                                        if index > 0 {
+                                            Divider().padding(.leading, 56)
+                                        }
+                                        SessionRow(session: session, goal: library.goal(session.goalID))
+                                            .contextMenu {
+                                                Button("Remove from Journal", role: .destructive) {
+                                                    withAnimation(Motion.standard) { library.delete(session) }
+                                                }
+                                            }
                                     }
                                 }
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .clipShape(.rect(cornerRadius: 16, style: .continuous))
+                            }
                         }
+                        .transition(.opacity)
                     }
-                    .animation(Motion.standard, value: sessions.map(\.id))
                 }
+                .animation(Motion.standard, value: sessions.map(\.id))
             }
         }
+    }
+
+    private func dayTitle(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        let title: String
+        if let days = calendar.dateComponents([.day], from: day, to: calendar.startOfDay(for: .now)).day, days < 7 {
+            title = day.formatted(.dateTime.weekday(.wide))
+        } else if calendar.isDate(day, equalTo: .now, toGranularity: .year) {
+            title = day.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        } else {
+            title = day.formatted(.dateTime.day().month(.wide).year())
+        }
+        return title.prefix(1).uppercased() + title.dropFirst()
+    }
+}
+
+extension FocusMode {
+    var tone: Color {
+        switch self {
+        case .flight: Color(light: 0x2F86E8, dark: 0x7DBBFF)
+        case .orbit: Color(light: 0x6650E6, dark: 0xA99CFF)
+        case .bloom: Color(light: 0x2FA35E, dark: 0x7DD6A0)
+        case .tide: Color(light: 0x14939B, dark: 0x66CFD4)
+        }
+    }
+}
+
+private enum JournalTone {
+    static let fill = Color(light: 0xFFFFFF, lightAlpha: 0.62, dark: 0xFFFFFF, darkAlpha: 0.055)
+    static let edge = Color(light: 0xFFFFFF, lightAlpha: 0.9, dark: 0xFFFFFF, darkAlpha: 0.08)
+}
+
+private struct JournalCard<Content: View>: View {
+    var padding: CGFloat = 20
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .padding(padding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(JournalTone.fill, in: .rect(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(JournalTone.edge, lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.04), radius: 12, y: 4)
     }
 }
 
@@ -132,75 +217,64 @@ private struct SessionRow: View {
         recording != nil || session.notes != nil || !(session.tasks ?? []).isEmpty || !(session.parked ?? []).isEmpty || !session.note.isEmpty
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                Image(systemName: session.kind?.symbol ?? session.mode.symbol)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(session.mode.palette.deep)
-                    .frame(width: 38, height: 38)
-                    .background(session.mode.palette.light, in: .circle)
+    private var meta: String {
+        var parts = [session.startedAt.formatted(date: .omitted, time: .shortened)]
+        if let kind = session.kind { parts.append(kind.title) }
+        if let goal { parts.append(goal.title) }
+        if let tasks = session.tasks, !tasks.isEmpty { parts.append("\(tasks.count { $0.isDone })/\(tasks.count) tasks") }
+        if let pages = session.pages { parts.append("pp. \(pages.lowerBound + 1)–\(pages.upperBound + 1)") }
+        if session.outcome != .completed { parts.append("Ended early") }
+        return parts.joined(separator: " · ")
+    }
 
-                VStack(alignment: .leading, spacing: 3) {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: session.kind?.symbol ?? session.mode.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 28, height: 28)
+                    .background(session.mode.tone.gradient, in: .rect(cornerRadius: 7, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.rounded(14, weight: .semibold))
+                        .font(.rounded(13, weight: .semibold))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
-                        Text(session.startedAt.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()))
-                        if let kind = session.kind {
-                            Text("· \(kind.title)")
-                        }
-                        if let goal {
-                            Circle().fill(goal.tint.color).frame(width: 5, height: 5)
-                            Text(goal.title)
-                        }
-                        if let tasks = session.tasks, !tasks.isEmpty {
-                            Text("· \(tasks.count { $0.isDone })/\(tasks.count) tasks")
-                        }
-                        if let pages = session.pages {
-                            Text("· pp. \(pages.lowerBound + 1)–\(pages.upperBound + 1)")
-                        }
-                    }
-                    .font(.rounded(12, weight: .medium))
-                    .foregroundStyle(Palette.inkSecondary)
-                    .lineLimit(1)
+                    Text(meta)
+                        .font(.rounded(12))
+                        .foregroundStyle(Palette.inkSecondary)
+                        .lineLimit(1)
                 }
 
-                Spacer()
+                Spacer(minLength: 12)
 
                 Text(session.focused.compactDuration)
-                    .font(.numeric(14, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
+                    .font(.numeric(13, weight: .medium))
+                    .foregroundStyle(session.outcome == .completed ? Palette.ink : Palette.inkSecondary)
 
-                Image(systemName: session.outcome == .completed ? "checkmark.circle.fill" : "circle.dashed")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(session.outcome == .completed ? FocusMode.bloom.palette.deep : Palette.inkTertiary)
-                    .help(session.outcome == .completed ? "Completed" : "Ended early")
-
-                if hasDetails {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Palette.inkTertiary)
-                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.inkTertiary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .opacity(hasDetails ? 1 : 0)
             }
 
             if isExpanded {
                 details
-                    .padding(.leading, 52)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.leading, 40)
+                    .padding(.bottom, 4)
+                    .transition(.opacity)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(Palette.surface.opacity(isHovering || isExpanded ? 0.6 : 0), in: .rect(cornerRadius: 18))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Palette.ink.opacity(isHovering && hasDetails ? 0.035 : 0))
         .contentShape(.rect)
         .onTapGesture {
             guard hasDetails else { return }
             withAnimation(Motion.standard) { isExpanded.toggle() }
         }
-        .animation(Motion.quick, value: isHovering)
         .onHover { isHovering = $0 }
     }
 
@@ -295,72 +369,118 @@ private struct SessionRow: View {
 
 private struct WeekChart: View {
     let days: [(day: Date, minutes: [FocusMode: Double])]
+    let thisWeek: TimeInterval
+    let accent: Color
+    @State private var isRevealed = false
 
     var body: some View {
-        Chart {
-            ForEach(days, id: \.day) { entry in
-                ForEach(FocusMode.allCases) { mode in
-                    BarMark(
-                        x: .value("Day", entry.day, unit: .day),
-                        y: .value("Minutes", entry.minutes[mode] ?? 0),
-                        width: .ratio(0.55)
-                    )
-                    .foregroundStyle(by: .value("Mode", mode.title))
-                    .clipShape(.rect(cornerRadius: 6))
+        let totals = days.map { $0.minutes.values.reduce(0, +) }
+        let average = totals.reduce(0, +) / Double(max(1, days.count))
+        let peak = max(30, (totals.max() ?? 0) * 1.08)
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("This Week")
+                        .font(.rounded(12, weight: .medium))
+                        .foregroundStyle(Palette.inkSecondary)
+                    Text(thisWeek.compactDuration)
+                        .font(.numeric(30, weight: .semibold))
+                        .displayTracking(30)
+                        .foregroundStyle(Palette.ink)
+                        .contentTransition(.numericText())
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Daily Average")
+                        .font(.rounded(12, weight: .medium))
+                        .foregroundStyle(Palette.inkSecondary)
+                    Text(TimeInterval(average * 60).compactDuration)
+                        .font(.numeric(17, weight: .semibold))
+                        .foregroundStyle(accent)
                 }
             }
-        }
-        .chartForegroundStyleScale(
-            domain: FocusMode.allCases.map(\.title),
-            range: FocusMode.allCases.map(\.palette.deep)
-        )
-        .chartLegend(.hidden)
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day)) { _ in
-                AxisValueLabel(format: .dateTime.weekday(.narrow))
-                    .font(.rounded(11, weight: .semibold))
+
+            Chart {
+                ForEach(Array(zip(days, totals)), id: \.0.day) { entry, total in
+                    BarMark(x: .value("Day", entry.day, unit: .day), y: .value("Track", peak), width: .ratio(0.3))
+                        .foregroundStyle(accent.opacity(0.1))
+                        .clipShape(.capsule)
+                    BarMark(x: .value("Day", entry.day, unit: .day), y: .value("Minutes", isRevealed ? max(total, total > 0 ? peak * 0.06 : 0) : 0), width: .ratio(0.3), stacking: .unstacked)
+                        .foregroundStyle(LinearGradient(colors: [accent.opacity(0.75), accent], startPoint: .bottom, endPoint: .top))
+                        .clipShape(.capsule)
+                        .opacity(Calendar.current.isDateInToday(entry.day) ? 1 : 0.78)
+                }
+                if average > 0 {
+                    RuleMark(y: .value("Average", average))
+                        .lineStyle(StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 4]))
+                        .foregroundStyle(Palette.inkTertiary)
+                }
             }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { _ in
-                AxisGridLine(stroke: StrokeStyle(lineWidth: 1, dash: [2, 4]))
-                    .foregroundStyle(Palette.hairline)
-                AxisValueLabel()
-                    .font(.rounded(10, weight: .medium))
+            .chartYScale(domain: 0...peak)
+            .chartYAxis(.hidden)
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day)) { value in
+                    AxisValueLabel(format: .dateTime.weekday(.abbreviated), centered: true)
+                        .font(.rounded(11, weight: isToday(value) ? .semibold : .medium))
+                        .foregroundStyle(isToday(value) ? Palette.ink : Palette.inkTertiary)
+                }
             }
+            .frame(height: 170)
         }
+        .onAppear {
+            withAnimation(.spring(duration: 0.9, bounce: 0).delay(0.1)) { isRevealed = true }
+        }
+    }
+
+    private func isToday(_ value: AxisValue) -> Bool {
+        value.as(Date.self).map { Calendar.current.isDateInToday($0) } ?? false
     }
 }
 
 private struct ModeBreakdown: View {
     let minutes: [FocusMode: Double]
+    @State private var isRevealed = false
 
     var body: some View {
-        let total = max(1, minutes.values.reduce(0, +))
-        VStack(spacing: 14) {
+        let peak = max(1, minutes.values.max() ?? 0)
+        let total = minutes.values.reduce(0, +)
+        VStack(spacing: 16) {
             ForEach(FocusMode.allCases) { mode in
                 let value = minutes[mode] ?? 0
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Label(mode.title, systemImage: mode.symbol)
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 8) {
+                        Image(systemName: mode.symbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(mode.tone)
+                            .frame(width: 16)
+                        Text(mode.title)
                             .font(.rounded(13, weight: .semibold))
                             .foregroundStyle(Palette.ink)
                         Spacer()
                         Text(TimeInterval(value * 60).compactDuration)
                             .font(.numeric(12, weight: .medium))
                             .foregroundStyle(Palette.inkSecondary)
+                        if total > 0 {
+                            Text("\(Int((value / total * 100).rounded()))%")
+                                .font(.numeric(12, weight: .medium))
+                                .foregroundStyle(Palette.inkTertiary)
+                                .frame(width: 34, alignment: .trailing)
+                        }
                     }
                     GeometryReader { proxy in
                         ZStack(alignment: .leading) {
-                            Capsule().fill(mode.palette.light)
+                            Capsule().fill(mode.tone.opacity(0.12))
                             Capsule()
-                                .fill(mode.palette.deep.gradient)
-                                .frame(width: max(8, proxy.size.width * value / total))
+                                .fill(LinearGradient(colors: [mode.tone.opacity(0.75), mode.tone], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: value > 0 ? max(6, proxy.size.width * (isRevealed ? value / peak : 0)) : 0)
                         }
                     }
-                    .frame(height: 8)
+                    .frame(height: 6)
                 }
             }
+        }
+        .onAppear {
+            withAnimation(.spring(duration: 0.9, bounce: 0).delay(0.15)) { isRevealed = true }
         }
     }
 }

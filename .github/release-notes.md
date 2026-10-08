@@ -1,9 +1,8 @@
-- Dark mode that follows your Mac, with a choice in Settings › Profile
-- A cleaner notch: new Home, Music and Calendar, smoother at 60 fps
-- The player works with any app in Now Playing, not just Spotify and Music
-- File Tray and Clipboard history in the notch
-- Lock screen widgets with a friendly greeting
-- Notices for AirPods, Caps Lock and low battery; volume and brightness redesigned
-- End a session from the notch, and see hours on long timers
-- Settings redesigned, with notch alignment and new options
-- Many fixes, including the play button, lecture names and a launch crash
+- Journal redesigned: cleaner cards, colors that match your mode and smooth daily bars
+- Smoother Flight: the plane glides steadily and starts up close
+- Start a session from the notch: pick a mode and minutes, then go
+- Notch notices for Focus modes and for locking and unlocking your Mac
+- Haptic feedback in the notch, and an option to show the volume percentage
+- Right-click the notch for quick options; a simpler menu bar menu
+- Calmer dark mode, closer to the Mac's own look
+- Fixes for auto-brightness notices, the Clipboard setting, the timer loop at 00:00 and the dark band at the bottom of scenes

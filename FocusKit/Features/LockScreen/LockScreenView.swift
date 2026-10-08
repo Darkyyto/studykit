@@ -15,28 +15,30 @@ struct LockScreenView: View {
     @AppStorage(LockScreen.calendarKey) private var showsCalendar = true
     @AppStorage(LockScreen.musicKey) private var showsMusic = true
     @AppStorage(LockScreen.styleKey) private var style = LockScreen.Style.glass
+    @AppStorage(LockScreen.enabledKey) private var showsWidgets = true
+    @AppStorage(LockScreen.notchKey) private var showsLockInNotch = true
 
     var body: some View {
         GeometryReader { proxy in
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 VStack(spacing: 14) {
-                    if showsGreeting {
+                    if showsWidgets, showsGreeting {
                         greeting(at: context.date)
                     }
                     HStack(spacing: 12) {
-                        if showsSession, engine.isActive, let plan = engine.plan {
+                        if showsWidgets, showsSession, engine.isActive, let plan = engine.plan {
                             session(plan, at: context.date)
                         }
-                        if showsBattery, let battery = DeviceWatcher.batteryState() {
+                        if showsWidgets, showsBattery, let battery = DeviceWatcher.batteryState() {
                             batteryWidget(battery)
                         }
-                        if showsAudio, let device = DeviceWatcher.bluetoothOutputs().values.sorted().first {
+                        if showsWidgets, showsAudio, let device = DeviceWatcher.bluetoothOutputs().values.sorted().first {
                             audioWidget(device)
                         }
-                        if showsCalendar, calendar.access == .granted, let event = calendar.upcoming.first {
+                        if showsWidgets, showsCalendar, calendar.access == .granted, let event = calendar.upcoming.first {
                             eventWidget(event, at: context.date)
                         }
-                        if showsMusic, nowPlaying.hasTrack {
+                        if showsWidgets, showsMusic, nowPlaying.hasTrack {
                             musicWidget
                         }
                     }
@@ -48,11 +50,22 @@ struct LockScreenView: View {
                 .scaleEffect(lockScreen.isShowing ? 1 : 0.96)
                 .animation(.spring(response: 0.6, dampingFraction: 0.9), value: lockScreen.isShowing)
             }
+            .overlay(alignment: .top) {
+                if showsLockInNotch, let notch = Self.notch {
+                    LockedNotch(notch: notch, isShowing: lockScreen.isShowing)
+                }
+            }
         }
         .foregroundStyle(.white)
         .onChange(of: lockScreen.isShowing) { _, showing in
             if showing { calendar.refresh() }
         }
+    }
+
+    private static var notch: CGSize? {
+        guard let screen = NSScreen.screens.first, screen.safeAreaInsets.top > 0,
+              let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else { return nil }
+        return CGSize(width: right.minX - left.maxX, height: screen.safeAreaInsets.top)
     }
 
     private var glass: Glass {
@@ -199,6 +212,26 @@ struct LockScreenView: View {
             label(nowPlaying.title, nowPlaying.artist)
             Spacer(minLength: 0)
         }
+    }
+}
+
+private struct LockedNotch: View {
+    let notch: CGSize
+    let isShowing: Bool
+    private let wing: CGFloat = 40
+
+    var body: some View {
+        UnevenRoundedRectangle(bottomLeadingRadius: notch.height * 0.4, bottomTrailingRadius: notch.height * 0.4, style: .continuous)
+            .fill(.black)
+            .frame(width: notch.width + (isShowing ? wing * 2 : 0), height: notch.height)
+            .overlay(alignment: .leading) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: wing)
+                    .opacity(isShowing ? 1 : 0)
+            }
+            .animation(.spring(response: 0.5, dampingFraction: 0.85), value: isShowing)
     }
 }
 

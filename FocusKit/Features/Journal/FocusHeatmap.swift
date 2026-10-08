@@ -2,18 +2,18 @@ import SwiftUI
 
 struct FocusHeatmap: View {
     let minutesByDay: [Date: Double]
-    var weeks = 20
+    var tint = FocusMode.bloom.tone
     var calendar = Calendar.current
 
     private let gap: CGFloat = 5
+    private let cell: CGFloat = 18
 
     var body: some View {
-        let columns = days
         let peak = max(60, minutesByDay.values.max() ?? 0)
-        let tint = FocusMode.bloom.palette.deep
 
         GeometryReader { proxy in
-            let cell = min(18, (proxy.size.width - 28 - gap * CGFloat(weeks)) / CGFloat(weeks))
+            let weeks = max(1, Int((proxy.size.width - 24) / (cell + gap)))
+            let columns = days(weeks)
             HStack(alignment: .top, spacing: gap) {
                 VStack(alignment: .leading, spacing: gap) {
                     ForEach(0..<7, id: \.self) { row in
@@ -28,7 +28,7 @@ struct FocusHeatmap: View {
                         ForEach(columns[column], id: \.self) { day in
                             let minutes = minutesByDay[day] ?? 0
                             RoundedRectangle(cornerRadius: cell * 0.32)
-                                .fill(minutes > 0 ? tint.opacity(0.25 + 0.75 * min(1, minutes / peak)) : Palette.ink.opacity(0.05))
+                                .fill(minutes > 0 ? tint.opacity(0.3 + 0.7 * min(1, minutes / peak)) : tint.opacity(0.08))
                                 .frame(width: cell, height: cell)
                                 .opacity(day > .now ? 0 : 1)
                                 .help("\(day.formatted(date: .abbreviated, time: .omitted)) · \(TimeInterval(minutes * 60).compactDuration)")
@@ -40,7 +40,7 @@ struct FocusHeatmap: View {
         .frame(height: 7 * 18 + 6 * gap)
     }
 
-    private var days: [[Date]] {
+    private func days(_ weeks: Int) -> [[Date]] {
         let today = calendar.startOfDay(for: .now)
         guard
             let thisWeek = calendar.dateInterval(of: .weekOfYear, for: today)?.start,

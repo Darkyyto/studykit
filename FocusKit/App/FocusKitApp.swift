@@ -12,7 +12,6 @@ struct FocusKitApp: App {
     @State private var soundscape: Soundscape
     @State private var updater = Updater()
     @AppStorage(Preference.showsMenuBarExtra) private var showsMenuBarExtra = true
-    @AppStorage(Preference.mainWindowOpen) private var mainWindowOpen = true
 
     init() {
         SandboxMigration.importDefaults()
@@ -64,17 +63,13 @@ struct FocusKitApp: App {
         .defaultSize(width: 1120, height: 760)
         .commands { AppCommands(engine: engine) }
 
-        MenuBarExtra(isInserted: Binding(get: { showsMenuBarExtra || !mainWindowOpen }, set: { showsMenuBarExtra = $0 })) {
-            MenuBarPanel()
-                .environment(library)
-                .environment(engine)
-                .environment(recorder)
-                .environment(enhancer)
+        MenuBarExtra(isInserted: $showsMenuBarExtra) {
+            MenuBarMenu()
                 .environment(updater)
         } label: {
-            MenuBarLabel(engine: engine)
+            MenuBarLabel()
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
 
         Settings {
             SettingsView()
@@ -99,7 +94,7 @@ enum Preference {
     static let transcriptionLocale = "transcriptionLocale"
     static let showsMenuBarExtra = "showsMenuBarExtra"
     static let keepsRunning = "keepsRunningInBackground"
-    static let mainWindowOpen = "mainWindowOpen"
+
 
     static func minutes(for mode: FocusMode) -> String {
         "minutes.\(mode.rawValue)"
@@ -119,7 +114,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        UserDefaults.standard.set(true, forKey: Preference.mainWindowOpen)
         let center = NotificationCenter.default
         center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
             let window = note.object as? NSWindow
@@ -131,8 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let window = note.object as? NSWindow
             MainActor.assumeIsolated {
                 guard AppDelegate.isMain(window) else { return }
-                UserDefaults.standard.set(true, forKey: Preference.mainWindowOpen)
-                if NSApp.activationPolicy() != .regular {
+                        if NSApp.activationPolicy() != .regular {
                     NSApp.setActivationPolicy(.regular)
                 }
             }
@@ -145,7 +138,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private static func mainWindowClosed() {
-        UserDefaults.standard.set(false, forKey: Preference.mainWindowOpen)
         guard keepsRunning else { return }
         DispatchQueue.main.async {
             NSApp.setActivationPolicy(.accessory)

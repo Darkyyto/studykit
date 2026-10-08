@@ -42,6 +42,7 @@ final class SystemHUD {
     static let enabledKey = "showsSystemHUD"
     static let replaceKey = "replacesSystemHUD"
     static let automaticBrightnessKey = "showsAutomaticBrightness"
+    static let percentKey = "showsIndicatorPercent"
 
     var wantsReplacement: Bool {
         UserDefaults.standard.bool(forKey: Self.replaceKey)
@@ -291,7 +292,8 @@ final class SystemHUD {
         guard let last = lastBrightness else { return }
         let delta = abs(value - last)
         guard delta > 0.004 else { return }
-        let isManual = Date.now.timeIntervalSince(lastBrightnessKey) < 1.2 || delta >= 0.05
+        let onKeyStep = abs(value * 16 - (value * 16).rounded()) < 0.06
+        let isManual = Date.now.timeIntervalSince(lastBrightnessKey) < 1.2 || (delta >= 0.05 && onKeyStep)
         guard isManual || UserDefaults.standard.bool(forKey: Self.automaticBrightnessKey) else { return }
         publish(.brightness, value: value)
     }

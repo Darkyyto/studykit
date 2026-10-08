@@ -26,10 +26,10 @@ struct AmbientBackground: View {
     private var colors: [Color] {
         let isDark = colorScheme == .dark
         let light = isDark
-            ? palette.light.mix(with: Palette.canvas, by: 0.55 - 0.25 * intensity)
+            ? palette.light.mix(with: Palette.canvas, by: 0.82 - 0.22 * intensity)
             : palette.light.opacity(0.55 + 0.45 * intensity)
         let mid = isDark
-            ? palette.mid.mix(with: Palette.canvas, by: 0.9 - 0.08 * intensity)
+            ? palette.mid.mix(with: Palette.canvas, by: 0.96 - 0.06 * intensity)
             : palette.mid.opacity(0.18 + 0.4 * intensity)
         return [
             Palette.canvas, light, Palette.canvas,

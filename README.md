@@ -58,19 +58,19 @@ Lecture and Meeting sessions record while you focus. The live transcript appears
 
 On Macs with a notch, FocusKit lives in it and grows out of it. While a session runs or music plays, the time left and the song appear on either side of the camera, and a new song, a break or a finished session slides in beside it without covering the screen. Move the pointer to the top of the screen and it opens:
 
-- **Home** – how long you have focused today, your streak and the last seven days, a tap to start any mode, or the session running with its controls, next to the song playing or the time and your next event.
+- **Home** – how long you have focused today and a Start button: pick a mode and a duration and the session begins, right from the notch. During a session it shows the time left with its controls, next to the song playing or the time and your next event.
 - **Music** – the cover, the song, a bar you can drag to move through it and the controls. It works with Spotify, Music and any app that shows in Control Center's Now Playing, such as Safari, Chrome, Podcasts or VLC.
 - **Calendar** – today in large type, the day's events (or tomorrow's when today is clear) and a small month to pick another day.
 - **Tray** – drag files onto the notch to keep them close. Drag them back out wherever you need them, or AirDrop and share them.
 - **Clipboard** – the last 40 things you copied, ready to copy again with a click. It is off until you turn it on, never keeps passwords and is cleared when FocusKit quits.
 
-Volume, brightness and charging show up in the notch too, as a slim bar on either side of the camera, along with AirPods connecting, Caps Lock and low battery. Turn on **Replace the macOS indicators** in Settings › Notch and FocusKit handles the volume and brightness keys itself, so only the notch appears. This needs the Accessibility permission, asked once.
+Volume, brightness and charging show up in the notch too, as a slim bar on either side of the camera, along with AirPods connecting, Do Not Disturb and other Focus modes, Caps Lock, low battery and unlocking your Mac. A light tap on the trackpad tells you when the notch opens. Turn on **Replace the macOS indicators** in Settings › Notch and FocusKit handles the volume and brightness keys itself, so only the notch appears. This needs the Accessibility permission, asked once.
 
-At rest the notch matches your Mac's own, so nothing shows until something happens. Choose when it appears, line it up with your Mac's notch and pick which notices to see in **Settings › Notch**.
+At rest the notch matches your Mac's own, so nothing shows until something happens. Right-click it to open FocusKit or its Settings. Choose when it appears, line it up with your Mac's notch and pick which notices to see in **Settings › Notch**.
 
 ## Lock screen
 
-When your Mac is locked, FocusKit can show a friendly greeting, your session, battery, headphones, your next event and the song playing below the clock. The widgets never take clicks and disappear the moment you unlock. Choose them, and a Glass or Clear look, in **Settings › Lock Screen**.
+When your Mac is locked, FocusKit shows a small lock beside the camera and can show a friendly greeting, your session, battery, headphones, your next event and the song playing below the clock. The widgets never take clicks and disappear the moment you unlock. Choose them, and a Glass or Clear look, in **Settings › Lock Screen**.
 
 ## Appearance
 
@@ -78,7 +78,7 @@ FocusKit follows your Mac's light or dark appearance. To keep it always light or
 
 ## Menu bar
 
-FocusKit keeps a small icon in the menu bar, with the time left while a session runs. Click it to see today, this week and your streak, start any mode with one tap, pause or skip the session, stop a recording, or open FocusKit, Settings, check for updates, restart or quit.
+FocusKit keeps a small icon in the menu bar with a short menu: open FocusKit, Settings, check for updates or quit. Hide it in **Settings › Focus** if you prefer.
 
 Closing the window does not quit the app. FocusKit leaves the Dock and keeps running in the menu bar and the notch, ready for the next session. Turn this off in **Settings › Focus**.
 
@@ -104,7 +104,7 @@ FocusKit goes online for three things only:
 - the cover of the song playing in Spotify, downloaded from Spotify's image server like Spotify itself does;
 - checking GitHub for a new version, which you can turn off in Settings › Updates.
 
-What the notch and the lock screen show, such as the song playing, your calendar, your battery and your headphones, is read on this Mac only to display it to you, and is never stored or sent anywhere.
+What the notch and the lock screen show, such as the song playing, your calendar, your battery and your headphones, is read on this Mac only to display it to you, and is never stored or sent anywhere. Clipboard history, if you turn it on, stays in memory, never keeps passwords and is cleared when FocusKit quits.
 
 Recordings are your responsibility: record lectures and meetings only where you are allowed to, and ask first when in doubt.
 

@@ -383,6 +383,7 @@ private struct AppearancePreview: View {
 
 private struct LockScreenPane: View {
     @AppStorage(LockScreen.enabledKey) private var enabled = true
+    @AppStorage(LockScreen.notchKey) private var lockInNotch = true
     @AppStorage(LockScreen.greetingKey) private var greeting = true
     @AppStorage(LockScreen.sessionKey) private var session = true
     @AppStorage(LockScreen.batteryKey) private var battery = true
@@ -394,6 +395,11 @@ private struct LockScreenPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsCard {
+                SettingsRow(title: "Lock and unlock in the notch", detail: "A lock beside the camera while your Mac is locked, and a short notice when you unlock.", symbol: "lock.open.fill", tint: Color(hex: 0x34C759)) {
+                    Toggle("", isOn: $lockInNotch)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
                 SettingsRow(title: "Lock Screen widgets", detail: "A greeting, your session and what matters right now, on top of the lock screen.", symbol: "lock.fill", tint: FocusMode.tide.palette.deep) {
                     Toggle("", isOn: $enabled)
                         .toggleStyle(.switch)
@@ -495,7 +501,7 @@ private struct FocusPane: View {
                         .font(.numeric(14, weight: .semibold))
                         .fixedSize()
                 }
-                SettingsRow(title: "Timer in the menu bar", detail: "Shows the time left while a session runs.", symbol: "menubar.rectangle", tint: Color(hex: 0x8E8E93)) {
+                SettingsRow(title: "Menu bar icon", detail: "A small menu to open FocusKit, Settings and updates. You can also right-click the notch.", symbol: "menubar.rectangle", tint: Color(hex: 0x8E8E93)) {
                     Toggle("", isOn: $showsMenuBarExtra)
                         .toggleStyle(.switch)
                         .labelsHidden()
@@ -517,10 +523,13 @@ private struct NotchPane: View {
     @AppStorage(FileTray.enabledKey) private var showsTray = true
     @AppStorage(ClipboardHistory.enabledKey) private var keepsClipboard = false
     @AppStorage(SystemHUD.automaticBrightnessKey) private var showsAutomaticBrightness = false
+    @AppStorage(SystemHUD.percentKey) private var showsPercent = true
+    @AppStorage(IslandController.hapticsKey) private var haptics = true
     @AppStorage(IslandController.offsetKey) private var notchOffset = 0.0
     @AppStorage(DeviceWatcher.audioKey) private var noticesAudio = true
     @AppStorage(DeviceWatcher.capsLockKey) private var noticesCapsLock = true
     @AppStorage(DeviceWatcher.batteryKey) private var noticesBattery = true
+    @AppStorage(DeviceWatcher.focusKey) private var noticesFocus = true
     @AppStorage(IslandController.heightKey) private var notchHeight = 0.0
     private let hasNotch = NSScreen.screens.contains { $0.safeAreaInsets.top > 0 }
     @Environment(SystemHUD.self) private var systemHUD
@@ -580,6 +589,13 @@ private struct NotchPane: View {
                 }
             }
             Footnote(text: "Move the pointer to the top of the screen to open the notch: your session, music, and the day ahead.")
+            SettingsCard {
+                SettingsRow(title: "Haptic feedback", detail: "Feel a light tap on the trackpad when the notch opens or takes a file.", showsDivider: false, symbol: "hand.tap.fill", tint: Color(hex: 0x5E5CE6)) {
+                    Toggle("", isOn: $haptics)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
             if hasNotch {
                 SettingsCard {
                     SettingsRow(title: "Horizontal position", detail: "Nudge the notch so its edges line up with your Mac's camera housing.", symbol: "arrow.left.and.right", tint: Color(hex: 0x8E8E93)) {
@@ -607,6 +623,12 @@ private struct NotchPane: View {
                         .toggleStyle(.switch)
                         .labelsHidden()
                         .onChange(of: showsIndicators) { systemHUD.updateKeyTap() }
+                }
+                SettingsRow(title: "Show the percentage", detail: "Show the level as a number next to the bar.", symbol: "percent", tint: Color(hex: 0x8E8E93)) {
+                    Toggle("", isOn: $showsPercent)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .disabled(!showsIndicators)
                 }
                 SettingsRow(title: "Automatic brightness changes", detail: "Also show when your Mac adjusts the brightness to the light around you.", symbol: "sun.max.fill", tint: Color(hex: 0xF5B800)) {
                     Toggle("", isOn: $showsAutomaticBrightness)
@@ -637,6 +659,11 @@ private struct NotchPane: View {
                 systemHUD.updateKeyTap()
             }
             SettingsCard {
+                SettingsRow(title: "Focus modes", detail: "Show when Do Not Disturb, Sleep or another Focus turns on or off.", symbol: "moon.fill", tint: Color(hex: 0x5E5CE6)) {
+                    Toggle("", isOn: $noticesFocus)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
                 SettingsRow(title: "AirPods and speakers", detail: "Show when headphones or a Bluetooth speaker connect or disconnect.", symbol: "airpodspro", tint: Color(hex: 0x0A84FF)) {
                     Toggle("", isOn: $noticesAudio)
                         .toggleStyle(.switch)
@@ -658,12 +685,12 @@ private struct NotchPane: View {
                     Toggle("", isOn: $showsTray)
                         .toggleStyle(.switch)
                         .labelsHidden()
-                    SettingsRow(title: "Clipboard history", detail: "Keep the last 40 things you copy in the notch. Passwords are never kept, and the history is cleared when FocusKit quits.", showsDivider: false, symbol: "list.clipboard", tint: Color(hex: 0x8E8E93)) {
+                }
+                SettingsRow(title: "Clipboard history", detail: "Keep the last 40 things you copy in the notch. Passwords are never kept, and the history is cleared when FocusKit quits.", showsDivider: false, symbol: "list.clipboard", tint: Color(hex: 0x8E8E93)) {
                     Toggle("", isOn: $keepsClipboard)
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
-            }
             }
             SettingsCard {
                 SettingsRow(title: "Calendar", detail: calendarAccess == .fullAccess ? "Connected. Events from all your calendars appear in the notch." : "Show your classes and meetings in the notch.", showsDivider: false, symbol: "calendar", tint: Color(hex: 0xFF453A)) {

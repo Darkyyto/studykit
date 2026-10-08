@@ -18,6 +18,7 @@ final class DeviceWatcher {
     static let audioKey = "noticesAudioDevices"
     static let capsLockKey = "noticesCapsLock"
     static let batteryKey = "noticesLowBattery"
+    static let focusKey = "noticesFocusModes"
 
     private(set) var notice: Notice?
 
@@ -27,6 +28,7 @@ final class DeviceWatcher {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var powerSource: CFRunLoopSource?
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     private static func isOn(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
@@ -52,6 +54,16 @@ final class DeviceWatcher {
         }
         timer?.tolerance = 0.1
 
+        let distributed = DistributedNotificationCenter.default()
+        for (name, isOn) in [("_NSDoNotDisturbEnabledNotification", true), ("_NSDoNotDisturbDisabledNotification", false)] {
+            observers.append(distributed.addObserver(forName: .init(name), object: nil, queue: .main) { [weak self] note in
+                let mode = Self.focusMode(from: note)
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self?.focusChanged(mode: mode, isOn: isOn) }
+                }
+            })
+        }
+
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ context in
             guard let context else { return }
@@ -76,6 +88,66 @@ final class DeviceWatcher {
         } else if let removed = outputs.keys.first(where: { current[$0] == nil }), let name = outputs[removed] {
             post("Disconnected", detail: Self.shortName(name), symbol: Self.symbol(for: name), tint: Color(white: 0.7))
         }
+    }
+
+    private func focusChanged(mode: FocusMode, isOn: Bool) {
+        guard Self.isOn(Self.focusKey) else { return }
+        post(mode.title, detail: isOn ? "On" : "Off", symbol: mode.symbol, tint: isOn ? Color(hex: 0x7D7AFF) : Color(white: 0.7))
+    }
+
+    enum FocusMode: Sendable {
+        case doNotDisturb, sleep, work, personal, driving, fitness, gaming, mindfulness, reading, other
+
+        var title: String {
+            switch self {
+            case .doNotDisturb: "Do Not Disturb"
+            case .sleep: "Sleep"
+            case .work: "Work"
+            case .personal: "Personal"
+            case .driving: "Driving"
+            case .fitness: "Fitness"
+            case .gaming: "Gaming"
+            case .mindfulness: "Mindfulness"
+            case .reading: "Reading"
+            case .other: "Focus"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .doNotDisturb: "moon.fill"
+            case .sleep: "bed.double.fill"
+            case .work: "briefcase.fill"
+            case .personal: "person.fill"
+            case .driving: "car.fill"
+            case .fitness: "figure.run"
+            case .gaming: "gamecontroller.fill"
+            case .mindfulness: "leaf.fill"
+            case .reading: "book.fill"
+            case .other: "moon.fill"
+            }
+        }
+    }
+
+    private nonisolated static func focusMode(from note: Notification) -> FocusMode {
+        var texts: [String] = []
+        func collect(_ value: Any?) {
+            switch value {
+            case let string as String: texts.append(string.lowercased())
+            case let dictionary as [AnyHashable: Any]: dictionary.values.forEach(collect)
+            case let array as [Any]: array.forEach(collect)
+            default: break
+            }
+        }
+        collect(note.userInfo)
+        collect(note.object)
+        let joined = texts.joined(separator: " ")
+        let table: [(String, FocusMode)] = [
+            ("sleep", .sleep), ("work", .work), ("personal", .personal), ("driving", .driving),
+            ("fitness", .fitness), ("gaming", .gaming), ("mindful", .mindfulness), ("reading", .reading),
+            ("donotdisturb", .doNotDisturb), ("do not disturb", .doNotDisturb),
+        ]
+        return table.first { joined.contains($0.0) }?.1 ?? .other
     }
 
     private func checkCapsLock() {

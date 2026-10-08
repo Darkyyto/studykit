@@ -17,10 +17,16 @@ struct IslandView: View {
     @AppStorage(Preference.focusMode) private var mode = FocusMode.flight
     @AppStorage(Preference.name) private var name = ""
     @AppStorage(FileTray.enabledKey) private var showsTray = true
+    @AppStorage(SystemHUD.percentKey) private var showsPercent = true
     @State private var isDropTargeted = false
     @State private var confirmsEnd = false
+    @State private var choosesStart = false
+    @State private var startMode = FocusMode.flight
+    @State private var startMinutes = 25
     @State private var endReset: Task<Void, Never>?
     @Namespace private var tabs
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     private var soundscapeKind: Soundscape.Kind? {
         guard engine.isActive, !engine.isPaused, let plan = engine.plan else { return nil }
@@ -71,6 +77,10 @@ struct IslandView: View {
             guard let notice else { return }
             controller.announce(notice.title, detail: notice.detail, symbol: notice.symbol, tint: notice.tint, fromSystem: true)
         }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openMainWindow)) { _ in
+            openWindow(id: "main")
+            NSApp.activate()
+        }
         .onChange(of: systemHUD.event) { _, event in
             if event != nil { controller.showSystemHUD() }
         }
@@ -78,7 +88,10 @@ struct IslandView: View {
             if controller.tab == .calendar { await calendar.prepare() }
         }
         .onChange(of: controller.shape) { _, shape in
-            if shape != .expanded { cancelEnd() }
+            if shape != .expanded {
+                cancelEnd()
+                choosesStart = false
+            }
             if shape == .expanded {
                 clipboard.refreshAccess()
                 calendar.refresh()
@@ -151,12 +164,27 @@ struct IslandView: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: isDropTargeted)
+        .contextMenu {
+            Text("FocusKit \(Updater.currentVersion)")
+            Divider()
+            Button("Open FocusKit") {
+                openWindow(id: "main")
+                NSApp.activate()
+            }
+            Button("Settings…") {
+                openSettings()
+                NSApp.activate()
+            }
+            Divider()
+            Button("Quit FocusKit") { NSApp.terminate(nil) }
+        }
         .dropDestination(for: URL.self) { urls, _ in
             guard showsTray else { return false }
             withAnimation(.spring(response: 0.36, dampingFraction: 0.85)) {
                 tray.add(urls)
                 controller.tab = .tray
             }
+            IslandController.tap()
             return true
         } isTargeted: { targeted in
             isDropTargeted = targeted && showsTray
@@ -240,7 +268,21 @@ struct IslandView: View {
         .padding(.top, 6)
     }
 
+    @ViewBuilder
     private var todayCard: some View {
+        ZStack {
+            if choosesStart {
+                startChooser
+                    .transition(.opacity.combined(with: .offset(x: 12)))
+            } else {
+                todaySummary
+                    .transition(.opacity.combined(with: .offset(x: -12)))
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.9), value: choosesStart)
+    }
+
+    private var todaySummary: some View {
         let stats = JournalStats(sessions: library.sessions)
         let week = stats.lastSevenDays.map { $0.minutes.values.reduce(0, +) }
         let today = (week.last ?? 0) * 60
@@ -257,25 +299,100 @@ struct IslandView: View {
                 Text("today")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.4))
-            }
-            HStack(spacing: 10) {
-                WeekBars(minutes: week, tint: mode.palette.mid)
-                    .frame(width: 70, height: 16)
+                Spacer(minLength: 0)
                 if stats.streak > 0 {
-                    Label("\(stats.streak) day streak", systemImage: "flame.fill")
-                        .font(.system(size: 11.5, weight: .medium))
+                    Label("\(stats.streak)", systemImage: "flame.fill")
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Palette.rest.mid)
+                        .help("\(stats.streak) day streak")
                 }
             }
-            .padding(.top, 2)
             Spacer(minLength: 10)
-            HStack(spacing: 8) {
-                ForEach(FocusMode.allCases) { item in
-                    ModeTile(mode: item, isCurrent: item == mode) { start(item) }
-                }
+            Button {
+                startMode = mode
+                startMinutes = FocusEngine.preferredMinutes(for: mode)
+                choosesStart = true
+            } label: {
+                Label("Start", systemImage: "play.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 38)
+                    .background(.white, in: .capsule)
+                    .contentShape(.capsule)
             }
+            .buttonStyle(.pressable)
+            .help("Start a focus session")
         }
         .padding(.vertical, 4)
+    }
+
+    private var startChooser: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                glyphButton("chevron.left", size: 12, dim: true, help: "Back") { choosesStart = false }
+                    .padding(.leading, -8)
+                Spacer(minLength: 0)
+                ForEach(FocusMode.allCases) { item in
+                    let isSelected = startMode == item
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) {
+                            startMode = item
+                            startMinutes = FocusEngine.preferredMinutes(for: item)
+                        }
+                    } label: {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(isSelected ? .black : item.palette.mid)
+                            .frame(width: 30, height: 30)
+                            .background(isSelected ? AnyShapeStyle(item.palette.mid) : AnyShapeStyle(.white.opacity(0.08)), in: .circle)
+                            .contentShape(.circle)
+                    }
+                    .buttonStyle(.pressable)
+                    .help(item.title)
+                }
+            }
+            Spacer(minLength: 4)
+            HStack(spacing: 0) {
+                glyphButton("minus", size: 15, dim: true, help: "5 minutes less") {
+                    startMinutes = max(5, startMinutes - 5)
+                }
+                .disabled(startMinutes <= 5)
+                Spacer(minLength: 0)
+                HStack(alignment: .lastTextBaseline, spacing: 5) {
+                    Text("\(startMinutes)")
+                        .font(.system(size: 40, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .contentTransition(.numericText(value: Double(startMinutes)))
+                        .animation(.spring(response: 0.28, dampingFraction: 0.9), value: startMinutes)
+                    Text("min")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+                Spacer(minLength: 0)
+                glyphButton("plus", size: 15, dim: true, help: "5 minutes more") {
+                    startMinutes = min(180, startMinutes + 5)
+                }
+                .disabled(startMinutes >= 180)
+            }
+            Spacer(minLength: 4)
+            Button {
+                choosesStart = false
+                start(startMode, minutes: startMinutes)
+            } label: {
+                Label("Start \(startMode.title)", systemImage: "play.fill")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 34)
+                    .background(startMode.palette.mid, in: .capsule)
+                    .contentShape(.capsule)
+            }
+            .buttonStyle(.pressable)
+            .animation(.easeOut(duration: 0.2), value: startMode)
+        }
+        .padding(.vertical, 2)
     }
 
     private var greeting: String {
@@ -352,7 +469,10 @@ struct IslandView: View {
                 }
                 Spacer(minLength: 0)
             } else {
-                glyphButton("checkmark", size: 20, help: "See summary") { controller.openApp() }
+                glyphButton("checkmark", size: 20, help: "Done") {
+                    withAnimation(Motion.morph) { engine.finish(note: "") }
+                }
+                glyphButton("doc.text", size: 15, dim: true, help: "See summary") { controller.openApp() }
                 Spacer(minLength: 0)
             }
         }
@@ -701,27 +821,45 @@ struct IslandView: View {
                         .foregroundStyle(hudTint(event))
                         .contentTransition(.symbolEffect(.replace))
                         .frame(width: 22)
-                    Text(event.kind == .volume && event.isMuted ? "Off" : "\(percent)%")
+                    Text(hudTitle(event))
                         .font(.system(size: 13, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(.white.opacity(0.85))
-                        .contentTransition(.numericText(value: event.value))
-                        .animation(Motion.quick, value: percent)
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
             } trailing: {
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(.white.opacity(0.18))
-                        Capsule()
-                            .fill(hudTint(event))
-                            .frame(width: max(5, proxy.size.width * (event.kind == .volume && event.isMuted ? 0 : event.value)))
-                            .animation(.spring(response: 0.28, dampingFraction: 1), value: event.value)
+                HStack(spacing: 8) {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(.white.opacity(0.18))
+                            Capsule()
+                                .fill(hudTint(event))
+                                .frame(width: max(5, proxy.size.width * (event.kind == .volume && event.isMuted ? 0 : event.value)))
+                                .animation(.spring(response: 0.28, dampingFraction: 1), value: event.value)
+                        }
+                    }
+                    .frame(height: 5)
+                    .opacity(event.kind == .volume && event.isMuted ? 0.5 : 1)
+                    if showsPercent {
+                        Text(event.kind == .volume && event.isMuted ? "" : "\(percent)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(.white.opacity(0.7))
+                            .contentTransition(.numericText(value: event.value))
+                            .animation(Motion.quick, value: percent)
+                            .frame(width: 24, alignment: .trailing)
                     }
                 }
-                .frame(height: 5)
-                .opacity(event.kind == .volume && event.isMuted ? 0.5 : 1)
             }
+        }
+    }
+
+    private func hudTitle(_ event: SystemHUD.Event) -> String {
+        switch event.kind {
+        case .volume: event.isMuted ? "Muted" : "Volume"
+        case .brightness: "Brightness"
+        case .battery: event.isCharging ? "Charging" : "Battery"
         }
     }
 
@@ -823,41 +961,57 @@ struct IslandView: View {
     private var peek: some View {
         if let announcement = controller.announcement {
             let isMusic = announcement.symbol == "music.note"
-            wings {
-                HStack(spacing: 8) {
-                    if isMusic {
-                        artworkThumbnail
-                            .frame(width: 22, height: 22)
-                            .clipShape(.rect(cornerRadius: 6, style: .continuous))
-                        Equalizer(tint: announcement.tint, isPlaying: nowPlaying.isPlaying)
-                            .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: announcement.symbol)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(announcement.tint)
-                            .frame(width: 22)
-                            .symbolEffect(.bounce, value: announcement.title)
-                        Text(announcement.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
+            VStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    Group {
+                        if isMusic {
+                            artworkThumbnail
+                                .frame(width: 22, height: 22)
+                                .clipShape(.rect(cornerRadius: 6, style: .continuous))
+                        } else {
+                            Image(systemName: announcement.symbol)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(announcement.tint)
+                                .symbolEffect(.bounce, value: announcement.title)
+                        }
                     }
+                    .frame(width: IslandController.peekWing - 14, alignment: .leading)
+                    .padding(.leading, 14)
+                    Spacer(minLength: 0)
+                    Group {
+                        if isMusic {
+                            Equalizer(tint: announcement.tint, isPlaying: nowPlaying.isPlaying)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Circle()
+                                .fill(announcement.tint)
+                                .frame(width: 6, height: 6)
+                        }
+                    }
+                    .frame(width: IslandController.peekWing - 14, alignment: .trailing)
+                    .padding(.trailing, 14)
                 }
-            } trailing: {
-                if isMusic {
+                .frame(height: controller.notch.height)
+                HStack(spacing: 6) {
+                    if isMusic {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
                     Text(announcement.title)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
-                        .lineLimit(1)
-                        .help(announcement.detail)
-                } else {
-                    Text(announcement.detail)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.7))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                    if !announcement.detail.isEmpty {
+                        Text("·")
+                            .foregroundStyle(.white.opacity(0.35))
+                        Text(announcement.detail)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
                 }
+                .lineLimit(1)
+                .padding(.horizontal, 16)
+                .frame(height: IslandController.peekLine - 4)
             }
             .id(announcement)
             .transition(.blurReplace)
@@ -1203,8 +1357,8 @@ struct IslandView: View {
         return engine.remaining(at: date).clock
     }
 
-    private func start(_ item: FocusMode) {
-        engine.startQuick(item)
+    private func start(_ item: FocusMode, minutes: Int? = nil) {
+        engine.startQuick(item, minutes: minutes)
     }
 }
 
@@ -1394,57 +1548,6 @@ private struct GlyphButtonStyle: ButtonStyle {
                 .animation(.easeOut(duration: 0.12), value: isHovering)
                 .onHover { isHovering = $0 }
         }
-    }
-}
-
-private struct ModeTile: View {
-    let mode: FocusMode
-    let isCurrent: Bool
-    let start: () -> Void
-    @State private var isHovering = false
-
-    var body: some View {
-        Button(action: start) {
-            VStack(spacing: 5) {
-                Image(systemName: mode.symbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(mode.palette.mid)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 38)
-                    .background(.white.opacity(isHovering ? 0.15 : isCurrent ? 0.11 : 0.07), in: .rect(cornerRadius: 12, style: .continuous))
-                Text(mode.title)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(.white.opacity(isCurrent || isHovering ? 0.85 : 0.5))
-            }
-            .contentShape(.rect)
-        }
-        .buttonStyle(.pressable)
-        .onHover { hovering in
-            withAnimation(.easeOut(duration: 0.12)) { isHovering = hovering }
-        }
-        .help("Start \(mode.title)")
-    }
-}
-
-private struct WeekBars: View {
-    let minutes: [Double]
-    let tint: Color
-
-    var body: some View {
-        let peak = max(minutes.max() ?? 0, 30)
-        GeometryReader { proxy in
-            HStack(alignment: .bottom, spacing: 3) {
-                ForEach(Array(minutes.enumerated()), id: \.offset) { index, value in
-                    let isToday = index == minutes.count - 1
-                    Capsule()
-                        .fill(isToday ? AnyShapeStyle(tint) : AnyShapeStyle(.white.opacity(value > 0 ? 0.3 : 0.12)))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: max(3, proxy.size.height * value / peak))
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .bottom)
-        }
-        .help("Last 7 days")
     }
 }
 
@@ -1656,7 +1759,7 @@ private struct TrayTile: View {
         }
         .onTapGesture(count: 2) { tray.open(item) }
         .onDrag {
-            NSItemProvider(contentsOf: item.url) ?? NSItemProvider()
+            NSItemProvider(object: item.url as NSURL)
         }
         .contextMenu {
             Button("Open") { tray.open(item) }

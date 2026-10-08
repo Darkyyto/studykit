@@ -39,11 +39,15 @@ struct ModeLauncher: View {
 }
 
 extension FocusEngine {
-    func startQuick(_ mode: FocusMode) {
+    static func preferredMinutes(for mode: FocusMode) -> Int {
+        let minutes = UserDefaults.standard.integer(forKey: Preference.minutes(for: mode))
+        return minutes > 0 ? minutes : mode.suggestedMinutes
+    }
+
+    func startQuick(_ mode: FocusMode, minutes chosen: Int? = nil) {
         let defaults = UserDefaults.standard
         defaults.set(mode.rawValue, forKey: Preference.focusMode)
-        let minutes = defaults.integer(forKey: Preference.minutes(for: mode))
-        let duration = TimeInterval((minutes > 0 ? minutes : mode.suggestedMinutes) * 60)
+        let duration = TimeInterval((chosen ?? Self.preferredMinutes(for: mode)) * 60)
         let rounds = max(1, defaults.object(forKey: "rounds") as? Int ?? 1)
         let breakMinutes = defaults.object(forKey: "breakMinutes") as? Int ?? 5
         let origin = Airport.named(defaults.string(forKey: Preference.homeAirport) ?? Airport.fallback.code) ?? .fallback

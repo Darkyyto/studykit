@@ -166,6 +166,10 @@ struct RootView: View {
             guard let window = notification.object as? NSWindow, window.title == "FocusKit" else { return }
             isOnScreen = window.occlusionState.contains(.visible) && !window.isMiniaturized
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
+            guard let window = notification.object as? NSWindow, window.title == "FocusKit", engine.phase.isComplete else { return }
+            engine.finish(note: "")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .showFocus)) { _ in
             withAnimation(Motion.standard) { section = .focus }
         }

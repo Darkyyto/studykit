@@ -21,6 +21,7 @@ final class LockScreen {
     static let calendarKey = "lockScreenCalendar"
     static let musicKey = "lockScreenMusic"
     static let styleKey = "lockScreenStyle"
+    static let notchKey = "lockScreenNotch"
     static let previewNotification = Notification.Name("FocusKitLockScreenPreview")
 
     static func isOn(_ key: String) -> Bool {
@@ -84,7 +85,7 @@ final class LockScreen {
     }
 
     private func show(force: Bool = false) {
-        guard let window, let bridge, force || Self.isOn(Self.enabledKey) else { return }
+        guard let window, let bridge, force || Self.isOn(Self.enabledKey) || Self.isOn(Self.notchKey) else { return }
         if let screen = NSScreen.screens.first, window.frame != screen.frame {
             window.setFrame(screen.frame, display: true)
         }
