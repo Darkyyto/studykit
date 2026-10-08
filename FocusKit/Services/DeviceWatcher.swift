@@ -19,6 +19,7 @@ final class DeviceWatcher {
     static let capsLockKey = "noticesCapsLock"
     static let batteryKey = "noticesLowBattery"
     static let focusKey = "noticesFocusModes"
+    static let lowPowerKey = "noticesLowPowerMode"
 
     private(set) var notice: Notice?
 
@@ -31,6 +32,7 @@ final class DeviceWatcher {
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var focusLog: FocusLog?
     @ObservationIgnored private var lastFocus: (isOn: Bool, date: Date)?
+    @ObservationIgnored private var lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
 
     private static func isOn(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
@@ -78,6 +80,12 @@ final class DeviceWatcher {
             }
         })
 
+        observers.append(NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.lowPowerChanged() }
+            }
+        })
+
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ context in
             guard let context else { return }
@@ -105,6 +113,14 @@ final class DeviceWatcher {
     }
 
     @ObservationIgnored private var focusLogRunning = false
+
+    private func lowPowerChanged() {
+        let on = ProcessInfo.processInfo.isLowPowerModeEnabled
+        guard on != lowPower else { return }
+        lowPower = on
+        guard Self.isOn(Self.lowPowerKey) else { return }
+        post("Low Power Mode", detail: on ? "On" : "Off", symbol: on ? "battery.25percent" : "battery.100percent", tint: on ? Color(hex: 0xFFD60A) : Color(white: 0.7))
+    }
 
     private func syncFocusLog() {
         let wanted = Self.isOn(Self.focusKey)

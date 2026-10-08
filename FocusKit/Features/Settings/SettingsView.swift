@@ -5,7 +5,7 @@ import UserNotifications
 
 struct SettingsView: View {
     enum Pane: String, CaseIterable, Identifiable {
-        case profile, focus, notch, lockScreen, sound, transcription, updates, privacy
+        case profile, focus, notch, lockScreen, sound, transcription, updates, privacy, about
 
         static var visible: [Pane] {
             allCases.filter { $0 != .lockScreen || LockScreen.isSupported }
@@ -23,6 +23,7 @@ struct SettingsView: View {
             case .transcription: "Transcription"
             case .updates: "Updates"
             case .privacy: "Privacy & Data"
+            case .about: "About"
             }
         }
 
@@ -36,6 +37,7 @@ struct SettingsView: View {
             case .transcription: "waveform"
             case .updates: "arrow.down.circle.fill"
             case .privacy: "hand.raised.fill"
+            case .about: "info.circle.fill"
             }
         }
 
@@ -49,6 +51,7 @@ struct SettingsView: View {
             case .transcription: FocusMode.tide.palette.deep
             case .updates: FocusMode.flight.palette.deep
             case .privacy: Palette.rest.deep
+            case .about: Color(hex: 0x8E8E93)
             }
         }
     }
@@ -82,6 +85,7 @@ struct SettingsView: View {
                         case .transcription: TranscriptionPane()
                         case .updates: UpdatesPane()
                         case .privacy: PrivacyPane()
+                        case .about: AboutPane()
                         }
                     }
                     .transition(.opacity.combined(with: .offset(y: 6)))
@@ -530,6 +534,7 @@ private struct NotchPane: View {
     @AppStorage(DeviceWatcher.capsLockKey) private var noticesCapsLock = true
     @AppStorage(DeviceWatcher.batteryKey) private var noticesBattery = true
     @AppStorage(DeviceWatcher.focusKey) private var noticesFocus = true
+    @AppStorage(DeviceWatcher.lowPowerKey) private var noticesLowPower = true
     @AppStorage(IslandController.heightKey) private var notchHeight = 0.0
     private let hasNotch = NSScreen.screens.contains { $0.safeAreaInsets.top > 0 }
     @Environment(SystemHUD.self) private var systemHUD
@@ -661,6 +666,11 @@ private struct NotchPane: View {
             SettingsCard {
                 SettingsRow(title: "Focus modes", detail: "Show when Do Not Disturb, Sleep or another Focus turns on or off.", symbol: "moon.fill", tint: Color(hex: 0x5E5CE6)) {
                     Toggle("", isOn: $noticesFocus)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+                SettingsRow(title: "Low Power Mode", detail: "Show when Low Power Mode turns on or off.", symbol: "bolt.fill", tint: Color(hex: 0xFFB000)) {
+                    Toggle("", isOn: $noticesLowPower)
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
@@ -954,5 +964,79 @@ enum Privacy {
         if let url = URL(string: base) {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+private struct AboutPane: View {
+    private var repository: URL? {
+        let name = Updater.repositoryName
+        return name.contains("/") ? URL(string: "https://github.com/\(name)") : nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SettingsCard {
+                HStack(spacing: 16) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 64, height: 64)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("FocusKit")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(Palette.ink)
+                        Text("Version \(Updater.currentVersion)")
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(Palette.inkSecondary)
+                        Text("© 2026 Vincent Elias Picchi")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Palette.inkTertiary)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+            }
+
+            if let repository {
+                SettingsCard {
+                    link("Source code", detail: "The full source, published on GitHub.", symbol: "chevron.left.forwardslash.chevron.right", tint: Color(hex: 0x3A3A3C), url: repository)
+                    link("Release notes", detail: "What changed in every version.", symbol: "list.bullet.rectangle.fill", tint: FocusMode.flight.palette.deep, url: repository.appending(path: "releases"))
+                    link("Report a problem", detail: "Open an issue and describe what happened.", symbol: "exclamationmark.bubble.fill", tint: Palette.rest.deep, url: repository.appending(path: "issues"))
+                    link("License", detail: "PolyForm Strict 1.0.0. Free for personal, study and other noncommercial use.", showsDivider: false, symbol: "doc.text.fill", tint: Color(hex: 0x8E8E93), url: repository.appending(path: "blob/main/LICENSE"))
+                }
+            }
+
+            Text("Acknowledgements")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Palette.inkSecondary)
+                .padding(.leading, 4)
+                .padding(.top, 8)
+
+            SettingsCard {
+                SettingsRow(title: "Apple frameworks", detail: "SwiftUI, MapKit, Charts, Speech, Foundation Models, EventKit, AVFoundation and PDFKit.", symbol: "apple.logo", tint: Color(hex: 0x1C1C1E)) {
+                    EmptyView()
+                }
+                SettingsRow(title: "Maps", detail: "Map data © Apple and its data providers.", symbol: "map.fill", tint: FocusMode.bloom.palette.deep) {
+                    EmptyView()
+                }
+                SettingsRow(title: "Symbols", detail: "Icons from SF Symbols by Apple.", symbol: "star.square.fill", tint: FocusMode.orbit.palette.deep) {
+                    EmptyView()
+                }
+                SettingsRow(title: "Earlier versions", detail: "FocusKit 0.3.0 and earlier were released under the MIT License.", showsDivider: false, symbol: "clock.arrow.circlepath", tint: FocusMode.tide.palette.deep) {
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    private func link(_ title: String, detail: String, showsDivider: Bool = true, symbol: String, tint: Color, url: URL) -> some View {
+        Link(destination: url) {
+            SettingsRow(title: title, detail: detail, showsDivider: showsDivider, symbol: symbol, tint: tint) {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.inkTertiary)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
     }
 }
