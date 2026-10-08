@@ -1,2 +1,2 @@
 <!-- silent -->
-- Small tweaks to the About page
+- The music player in the notch has more room at the bottom

@@ -643,14 +643,14 @@ struct IslandView: View {
     }
 
     private var musicTab: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 10) {
             HStack(spacing: 14) {
                 if nowPlaying.hasTrack {
-                    artwork(size: 64, radius: 14)
+                    artwork(size: 56, radius: 13)
                 } else {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(.white.opacity(0.08))
-                        .frame(width: 64, height: 64)
+                        .frame(width: 56, height: 56)
                         .overlay {
                             Image(systemName: "music.note")
                                 .font(.system(size: 22, weight: .medium))
@@ -699,7 +699,8 @@ struct IslandView: View {
             .padding(.horizontal, 4)
         }
         .padding(.horizontal, 10)
-        .padding(.top, 8)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .task { await keepInSync() }
     }
