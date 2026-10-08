@@ -290,10 +290,8 @@ final class SystemHUD {
         guard let value = brightness() else { return }
         defer { lastBrightness = value }
         guard let last = lastBrightness else { return }
-        let delta = abs(value - last)
-        guard delta > 0.004 else { return }
-        let onKeyStep = abs(value * 16 - (value * 16).rounded()) < 0.06
-        let isManual = Date.now.timeIntervalSince(lastBrightnessKey) < 1.2 || (delta >= 0.05 && onKeyStep)
+        guard abs(value - last) > 0.004 else { return }
+        let isManual = Date.now.timeIntervalSince(lastBrightnessKey) < 1.2
         guard isManual || UserDefaults.standard.bool(forKey: Self.automaticBrightnessKey) else { return }
         publish(.brightness, value: value)
     }

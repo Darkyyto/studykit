@@ -79,8 +79,8 @@ final class IslandController {
     @ObservationIgnored private var wasPressed = false
 
     static let canvas = CGSize(width: 760, height: 340)
-    static let expandedSize = CGSize(width: 540, height: 178)
-    static let wing: CGFloat = 54
+    static let expandedSize = CGSize(width: 500, height: 166)
+    static let wing: CGFloat = 50
     static let wideWing: CGFloat = 80
 
     var wing: CGFloat {
@@ -108,8 +108,8 @@ final class IslandController {
     let clipboard = ClipboardHistory()
     @ObservationIgnored private let library: Library
     let systemHUD = SystemHUD()
-    static let hudWing: CGFloat = 136
-    static let peekWing: CGFloat = 64
+    static let hudWing: CGFloat = 124
+    static let peekWing: CGFloat = 58
     static let peekLine: CGFloat = 30
 
     init(engine: FocusEngine, recorder: VoiceRecorder, library: Library, nowPlaying: NowPlaying, soundscape: Soundscape, enhancer: NoteEnhancer) {
@@ -148,7 +148,7 @@ final class IslandController {
         observers.append(center.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.scheduleRefresh() }
         })
-        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+        observers.append(DistributedObserver("com.apple.screenIsUnlocked") { [weak self] _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 MainActor.assumeIsolated { self?.unlocked() }
             }

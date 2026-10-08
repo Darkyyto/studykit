@@ -1,8 +1,5 @@
-- Journal redesigned: cleaner cards, colors that match your mode and smooth daily bars
-- Smoother Flight: the plane glides steadily and starts up close
-- Start a session from the notch: pick a mode and minutes, then go
-- Notch notices for Focus modes and for locking and unlocking your Mac
-- Haptic feedback in the notch, and an option to show the volume percentage
-- Right-click the notch for quick options; a simpler menu bar menu
-- Calmer dark mode, closer to the Mac's own look
-- Fixes for auto-brightness notices, the Clipboard setting, the timer loop at 00:00 and the dark band at the bottom of scenes
+- Focus modes in the notch now work on the latest macOS
+- Lock and unlock notices arrive right away, even when FocusKit is in the background
+- A slightly smaller, tidier notch
+- The brightness notice no longer appears when your Mac dims on its own, like when you unplug it
+- Videos from other apps, like Prime Video, no longer get replaced by a paused Spotify when you open the notch

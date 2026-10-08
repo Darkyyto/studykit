@@ -69,11 +69,10 @@ final class LockScreen {
         window = panel
         space = bridge.makeSpace()
 
-        let distributed = DistributedNotificationCenter.default()
-        observers.append(distributed.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { [weak self] _ in
+        observers.append(DistributedObserver("com.apple.screenIsLocked") { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.show() } }
         })
-        observers.append(distributed.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+        observers.append(DistributedObserver("com.apple.screenIsUnlocked") { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.hide() } }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in

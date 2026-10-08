@@ -29,6 +29,8 @@ final class DeviceWatcher {
     @ObservationIgnored private var powerSource: CFRunLoopSource?
     @ObservationIgnored private var started = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var focusLog: FocusLog?
+    @ObservationIgnored private var lastFocus: (isOn: Bool, date: Date)?
 
     private static func isOn(_ key: String) -> Bool {
         UserDefaults.standard.object(forKey: key) as? Bool ?? true
@@ -54,15 +56,27 @@ final class DeviceWatcher {
         }
         timer?.tolerance = 0.1
 
-        let distributed = DistributedNotificationCenter.default()
         for (name, isOn) in [("_NSDoNotDisturbEnabledNotification", true), ("_NSDoNotDisturbDisabledNotification", false)] {
-            observers.append(distributed.addObserver(forName: .init(name), object: nil, queue: .main) { [weak self] note in
+            observers.append(DistributedObserver(name) { [weak self] note in
                 let mode = Self.focusMode(from: note)
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated { self?.focusChanged(mode: mode, isOn: isOn) }
                 }
             })
         }
+
+        focusLog = FocusLog { [weak self] identifier, isOn in
+            let mode = Self.focusMode(identifier: identifier)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.focusChanged(mode: mode, isOn: isOn) }
+            }
+        }
+        syncFocusLog()
+        observers.append(NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.syncFocusLog() }
+            }
+        })
 
         let context = Unmanaged.passUnretained(self).toOpaque()
         if let source = IOPSNotificationCreateRunLoopSource({ context in
@@ -90,8 +104,23 @@ final class DeviceWatcher {
         }
     }
 
+    @ObservationIgnored private var focusLogRunning = false
+
+    private func syncFocusLog() {
+        let wanted = Self.isOn(Self.focusKey)
+        guard wanted != focusLogRunning else { return }
+        focusLogRunning = wanted
+        if wanted {
+            focusLog?.start()
+        } else {
+            focusLog?.stop()
+        }
+    }
+
     private func focusChanged(mode: FocusMode, isOn: Bool) {
         guard Self.isOn(Self.focusKey) else { return }
+        if let lastFocus, lastFocus.isOn == isOn, Date.now.timeIntervalSince(lastFocus.date) < 2 { return }
+        lastFocus = (isOn, .now)
         post(mode.title, detail: isOn ? "On" : "Off", symbol: mode.symbol, tint: isOn ? Color(hex: 0x7D7AFF) : Color(white: 0.7))
     }
 
@@ -127,6 +156,16 @@ final class DeviceWatcher {
             case .other: "moon.fill"
             }
         }
+    }
+
+    private nonisolated static func focusMode(identifier: String) -> FocusMode {
+        let value = identifier.lowercased()
+        let table: [(String, FocusMode)] = [
+            ("sleep", .sleep), ("work", .work), ("personal", .personal), ("driving", .driving),
+            ("fitness", .fitness), ("workout", .fitness), ("gaming", .gaming), ("mindful", .mindfulness),
+            ("reading", .reading), ("donotdisturb.mode.default", .doNotDisturb),
+        ]
+        return table.first { value.contains($0.0) }?.1 ?? (value.isEmpty ? .doNotDisturb : .other)
     }
 
     private nonisolated static func focusMode(from note: Notification) -> FocusMode {

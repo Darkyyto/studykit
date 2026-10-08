@@ -248,13 +248,13 @@ struct IslandView: View {
                     todayCard
                 }
             }
-            .frame(width: 250)
+            .frame(width: 228)
             .frame(maxHeight: .infinity, alignment: .topLeading)
             Rectangle()
                 .fill(.white.opacity(0.09))
                 .frame(width: 1)
                 .padding(.vertical, 8)
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 14)
             Group {
                 if nowPlaying.hasTrack {
                     musicCard
@@ -293,9 +293,11 @@ struct IslandView: View {
                 .lineLimit(1)
             HStack(alignment: .lastTextBaseline, spacing: 6) {
                 Text(today > 0 ? today.compactDuration : "0 min")
-                    .font(.system(size: 30, weight: .semibold))
+                    .font(.system(size: 26, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                 Text("today")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.4))
@@ -1214,7 +1216,7 @@ struct IslandView: View {
                 Spacer(minLength: 0)
                 calendarStatus(events: events, isToday: isToday)
             }
-            .frame(width: 112, alignment: .leading)
+            .frame(width: 104, alignment: .leading)
             .frame(maxHeight: .infinity, alignment: .topLeading)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1232,7 +1234,7 @@ struct IslandView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             MonthGrid(calendar: calendar)
-                .frame(width: 168)
+                .frame(width: 156)
         }
         .padding(.horizontal, 8)
         .padding(.top, 4)

@@ -51,15 +51,14 @@ final class NowPlaying {
     @ObservationIgnored private var expectationEnds = Date.distantPast
 
     init() {
-        let center = DistributedNotificationCenter.default()
         observers = [
-            center.addObserver(forName: .init("com.spotify.client.PlaybackStateChanged"), object: nil, queue: .main) { [weak self] note in
+            DistributedObserver("com.spotify.client.PlaybackStateChanged") { [weak self] note in
                 let update = Self.parse(note.userInfo, player: .spotify)
-                MainActor.assumeIsolated { self?.apply(update) }
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply(update) } }
             },
-            center.addObserver(forName: .init("com.apple.Music.playerInfo"), object: nil, queue: .main) { [weak self] note in
+            DistributedObserver("com.apple.Music.playerInfo") { [weak self] note in
                 let update = Self.parse(note.userInfo, player: .music)
-                MainActor.assumeIsolated { self?.apply(update) }
+                DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply(update) } }
             },
         ]
         bridge.onUpdate = { [weak self] snapshot in self?.apply(snapshot) }
@@ -114,9 +113,8 @@ final class NowPlaying {
             ))
         }
         let chosen = found.first { $0.state == "Playing" } ?? found.first { $0.player == player } ?? found.first
-        if let chosen {
-            apply(chosen, force: true)
-        }
+        guard let chosen, source == nil || chosen.state == "Playing" else { return }
+        apply(chosen, force: true)
     }
 
     func togglePlayback() {
