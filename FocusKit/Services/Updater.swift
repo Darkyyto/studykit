@@ -10,6 +10,7 @@ final class Updater {
         let notes: String
         let diskImage: URL
         let page: URL
+        var isSilent = false
     }
 
     enum State: Equatable {
@@ -28,6 +29,18 @@ final class Updater {
     private(set) var pending: Release?
 
     @ObservationIgnored private var download: Task<Void, Never>?
+    @ObservationIgnored private var quietTimer: Timer?
+    @ObservationIgnored private var quietUpdate: URL?
+    @ObservationIgnored var canRestart: (@MainActor () -> Bool)?
+    private(set) var isQuiet = false
+
+    static let installsFixesKey = "installsFixesAutomatically"
+    static let updatedFromKey = "quietlyUpdatedFrom"
+
+    var installsFixesAutomatically: Bool {
+        get { UserDefaults.standard.object(forKey: Self.installsFixesKey) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: Self.installsFixesKey) }
+    }
 
     nonisolated static let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     nonisolated static var repositoryName: String { repository }
@@ -42,9 +55,10 @@ final class Updater {
     }
 
     var available: Release? {
+        if isQuiet { return nil }
         switch state {
-        case .available, .downloading, .ready: pending
-        default: nil
+        case .available, .downloading, .ready: return pending
+        default: return nil
         }
     }
 
@@ -97,9 +111,20 @@ final class Updater {
                 state = .upToDate
                 return
             }
-            let release = Release(version: version, notes: payload.body ?? "", diskImage: diskImage, page: page)
+            let body = payload.body ?? ""
+            let silent = body.contains("<!-- silent -->")
+            let notes = body.replacingOccurrences(of: "<!-- silent -->", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let release = Release(version: version, notes: notes, diskImage: diskImage, page: page, isSilent: silent)
+            if quietUpdate != nil, pending?.version == version, !userInitiated {
+                return
+            }
+            isQuiet = silent && installsFixesAutomatically && !userInitiated && !wasBlocked && !SandboxMigration.isSandboxed
             state = .available(release)
             pending = release
+            if isQuiet {
+                install(release)
+                return
+            }
             if !userInitiated || wasBlocked {
                 try? await Task.sleep(for: .seconds(wasBlocked ? 0.4 : 1.2))
                 presented = release
@@ -120,10 +145,18 @@ final class Updater {
         return allowed
     }
 
+    enum Relaunch: String {
+        case open
+        case background
+        case quiet
+        case none
+    }
+
     func openInstaller(_ url: URL) {
         if url.pathExtension == "app", !checkPermission() {
             return
         }
+        stopWaitingQuietly()
         guard url.pathExtension == "app" else {
             NSWorkspace.shared.open(url)
             Task {
@@ -132,6 +165,15 @@ final class Updater {
             }
             return
         }
+        if launchInstaller(url, relaunch: .open) {
+            NSApp.terminate(nil)
+        } else {
+            state = .failed("FocusKit could not install the update by itself. Download it from the release page.")
+        }
+    }
+
+    @discardableResult
+    private func launchInstaller(_ url: URL, relaunch: Relaunch) -> Bool {
         var destination = Bundle.main.bundleURL.standardizedFileURL
         if destination.path(percentEncoded: false).contains("/AppTranslocation/") {
             destination = URL(fileURLWithPath: "/Applications/FocusKit.app")
@@ -156,19 +198,67 @@ final class Updater {
           rm -rf "$APP.updating"
           touch "$5"
         fi
-        open "$APP"
+        case "$6" in
+          none) ;;
+          quiet) open -g -j "$APP" --args --quiet-relaunch ;;
+          background) open -g "$APP" ;;
+          *) open "$APP" ;;
+        esac
         rm -rf "$WORK"
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         try? FileManager.default.removeItem(at: Self.failureMarker)
-        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(url.deletingLastPathComponent()), Self.plainPath(Self.failureMarker)]
+        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(url.deletingLastPathComponent()), Self.plainPath(Self.failureMarker), relaunch.rawValue]
         do {
             try process.run()
-            NSApp.terminate(nil)
+            return true
         } catch {
-            state = .failed("FocusKit could not install the update by itself. Download it from the release page.")
+            return false
         }
+    }
+
+    func installBeforeQuitting() {
+        guard let quietUpdate else { return }
+        stopWaitingQuietly()
+        UserDefaults.standard.set(Self.currentVersion, forKey: Self.updatedFromKey)
+        launchInstaller(quietUpdate, relaunch: .none)
+    }
+
+    private func waitQuietly(with url: URL) {
+        quietUpdate = url
+        quietTimer?.invalidate()
+        quietTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.installIfQuiet() }
+        }
+        quietTimer?.tolerance = 20
+    }
+
+    private func stopWaitingQuietly() {
+        quietTimer?.invalidate()
+        quietTimer = nil
+        quietUpdate = nil
+    }
+
+    private func installIfQuiet() {
+        guard let quietUpdate, installsFixesAutomatically, canRestart?() ?? false else { return }
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
+        guard LockScreen.isLocked || idle > 15 * 60 else { return }
+        let showsWindow = NSApp.windows.contains { $0.isVisible && $0.identifier?.rawValue.hasPrefix("main") == true }
+        stopWaitingQuietly()
+        UserDefaults.standard.set(Self.currentVersion, forKey: Self.updatedFromKey)
+        if launchInstaller(quietUpdate, relaunch: showsWindow ? .background : .quiet) {
+            NSApp.terminate(nil)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.updatedFromKey)
+        }
+    }
+
+    static func takeQuietUpdateNotice() -> String? {
+        let defaults = UserDefaults.standard
+        guard let previous = defaults.string(forKey: updatedFromKey) else { return nil }
+        defaults.removeObject(forKey: updatedFromKey)
+        return isNewer(currentVersion, than: previous) ? currentVersion : nil
     }
 
     nonisolated private static func plainPath(_ url: URL) -> String {
@@ -245,11 +335,22 @@ final class Updater {
                 if SandboxMigration.isSandboxed {
                     state = .ready(destination)
                 } else {
-                    state = .ready(try await Self.stage(destination, in: work))
-                    checkPermission()
+                    let staged = try await Self.stage(destination, in: work)
+                    state = .ready(staged)
+                    if checkPermission(), isQuiet {
+                        waitQuietly(with: staged)
+                        return
+                    }
                 }
+                isQuiet = false
                 presented = release
             } catch {
+                guard !isQuiet else {
+                    isQuiet = false
+                    state = .idle
+                    pending = nil
+                    return
+                }
                 state = .failed("The download did not finish. You can get it from the release page instead.")
                 NSWorkspace.shared.open(release.page)
             }

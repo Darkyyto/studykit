@@ -822,6 +822,7 @@ private struct TranscriptionPane: View {
 private struct UpdatesPane: View {
     @Environment(Updater.self) private var updater
     @State private var checksAutomatically = true
+    @State private var installsFixes = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -856,6 +857,12 @@ private struct UpdatesPane: View {
                         .labelsHidden()
                         .onChange(of: checksAutomatically) { _, value in updater.checksAutomatically = value }
                 }
+                SettingsRow(title: "Install small fixes automatically", detail: "Quietly, while your Mac is idle or when you quit.", symbol: "sparkles", tint: FocusMode.orbit.palette.deep) {
+                    Toggle("", isOn: $installsFixes)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .onChange(of: installsFixes) { _, value in updater.installsFixesAutomatically = value }
+                }
                 SettingsRow(title: "Backups", detail: "Saved before every update and once a day.", showsDivider: false, symbol: "externaldrive.fill", tint: Color(hex: 0x8E8E93)) {
                     Button("Show in Finder") {
                         try? FileManager.default.createDirectory(at: Backup.directory, withIntermediateDirectories: true)
@@ -868,7 +875,10 @@ private struct UpdatesPane: View {
             Footnote(text: "An update replaces only the app. Sessions, lectures and notes stay in your library.")
         }
         .animation(Motion.standard, value: updater.state)
-        .onAppear { checksAutomatically = updater.checksAutomatically }
+        .onAppear {
+            checksAutomatically = updater.checksAutomatically
+            installsFixes = updater.installsFixesAutomatically
+        }
     }
 
     private var status: String {

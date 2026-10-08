@@ -10,7 +10,7 @@ struct FocusKitApp: App {
     @State private var island: IslandController
     @State private var nowPlaying: NowPlaying
     @State private var soundscape: Soundscape
-    @State private var updater = Updater()
+    @State private var updater: Updater
     @AppStorage(Preference.showsMenuBarExtra) private var showsMenuBarExtra = true
 
     init() {
@@ -28,6 +28,23 @@ struct FocusKitApp: App {
         _nowPlaying = State(initialValue: nowPlaying)
         _soundscape = State(initialValue: soundscape)
         _island = State(initialValue: IslandController(engine: engine, recorder: recorder, library: library, nowPlaying: nowPlaying, soundscape: soundscape, enhancer: enhancer))
+        let updater = Updater()
+        _updater = State(initialValue: updater)
+        updater.canRestart = { !engine.isActive && !recorder.isActive }
+        AppDelegate.beforeTerminate = {
+            if engine.isActive {
+                engine.stop()
+            }
+            if recorder.isActive, let recording = await recorder.stop() {
+                engine.attachRecording(recording.id)
+            }
+            updater.installBeforeQuitting()
+        }
+        DispatchQueue.main.async {
+            Backup.onLaunch()
+            updater.checkOnLaunch()
+            enhancer.resumePending(for: Persona(rawValue: UserDefaults.standard.string(forKey: Preference.persona) ?? "") ?? .personal)
+        }
     }
 
     var body: some Scene {
@@ -40,20 +57,6 @@ struct FocusKitApp: App {
                 .environment(nowPlaying)
                 .environment(soundscape)
                 .environment(updater)
-                .task {
-                    Backup.onLaunch()
-                    updater.checkOnLaunch()
-                    enhancer.resumePending(for: Persona(rawValue: UserDefaults.standard.string(forKey: Preference.persona) ?? "") ?? .personal)
-                    delegate.beforeTerminate = { [engine, recorder] in
-                        if engine.isActive {
-                            engine.stop()
-                        }
-                        guard recorder.isActive else { return }
-                        if let recording = await recorder.stop() {
-                            engine.attachRecording(recording.id)
-                        }
-                    }
-                }
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
                     library.flush()
                 }
@@ -61,6 +64,7 @@ struct FocusKitApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1120, height: 760)
+        .defaultLaunchBehavior(AppDelegate.isQuietLaunch ? .suppressed : .automatic)
         .commands { AppCommands(engine: engine) }
 
         MenuBarExtra(isInserted: $showsMenuBarExtra) {
@@ -104,6 +108,8 @@ enum Preference {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openDocuments = Notification.Name("FocusKitOpenDocuments")
     static let openMainWindow = Notification.Name("FocusKitOpenMainWindow")
+    static let isQuietLaunch = CommandLine.arguments.contains("--quiet-relaunch")
+    @MainActor static var beforeTerminate: (@MainActor () async -> Void)?
 
     private static var keepsRunning: Bool {
         UserDefaults.standard.object(forKey: Preference.keepsRunning) as? Bool ?? true
@@ -111,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         Appearance.current.apply()
+        if Self.isQuietLaunch {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -155,10 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    var beforeTerminate: (@MainActor () async -> Void)?
-
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let beforeTerminate else { return .terminateNow }
+        guard let beforeTerminate = Self.beforeTerminate else { return .terminateNow }
         Task { @MainActor in
             await beforeTerminate()
             sender.reply(toApplicationShouldTerminate: true)

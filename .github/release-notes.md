@@ -1,1 +1,1 @@
-- The timer next to the notch no longer slips under the camera
+- Small fixes can now install themselves quietly, while your Mac is idle or when you quit, with a short note in the notch afterwards. You can turn this off in Settings › Updates.
