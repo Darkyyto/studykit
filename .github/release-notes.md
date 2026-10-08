@@ -1,3 +1,2 @@
 <!-- silent -->
-- New About page in Settings, with links and acknowledgements
-- The notch now shows when Low Power Mode turns on or off
+- Small fixes now install right when you open FocusKit, so it is always up to date

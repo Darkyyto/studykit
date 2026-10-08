@@ -33,6 +33,12 @@ final class Updater {
     @ObservationIgnored private var quietUpdate: URL?
     @ObservationIgnored var canRestart: (@MainActor () -> Bool)?
     private(set) var isQuiet = false
+    private(set) var launchPhase: LaunchPhase?
+
+    enum LaunchPhase: Equatable {
+        case checking
+        case updating(String)
+    }
 
     static let installsFixesKey = "installsFixesAutomatically"
     static let updatedFromKey = "quietlyUpdatedFrom"
@@ -77,7 +83,15 @@ final class Updater {
             wasBlocked = true
         }
         guard (checksAutomatically || wasBlocked), isConfigured else { return }
-        Task { await check(userInitiated: false) }
+        launchPhase = .checking
+        Task {
+            await check(userInitiated: false)
+            if !isQuiet { launchPhase = nil }
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(25))
+            launchPhase = nil
+        }
     }
 
     func check(userInitiated: Bool) async {
@@ -122,6 +136,7 @@ final class Updater {
             state = .available(release)
             pending = release
             if isQuiet {
+                if launchPhase != nil { launchPhase = .updating(version) }
                 install(release)
                 return
             }
@@ -216,6 +231,16 @@ final class Updater {
         } catch {
             return false
         }
+    }
+
+    private func applyNow(_ url: URL) -> Bool {
+        UserDefaults.standard.set(Self.currentVersion, forKey: Self.updatedFromKey)
+        guard launchInstaller(url, relaunch: AppDelegate.isQuietLaunch ? .quiet : .open) else {
+            UserDefaults.standard.removeObject(forKey: Self.updatedFromKey)
+            return false
+        }
+        NSApp.terminate(nil)
+        return true
     }
 
     func installBeforeQuitting() {
@@ -338,14 +363,20 @@ final class Updater {
                     let staged = try await Self.stage(destination, in: work)
                     state = .ready(staged)
                     if checkPermission(), isQuiet {
+                        if launchPhase != nil, canRestart?() ?? true, applyNow(staged) {
+                            return
+                        }
+                        launchPhase = nil
                         waitQuietly(with: staged)
                         return
                     }
                 }
+                launchPhase = nil
                 isQuiet = false
                 presented = release
             } catch {
                 guard !isQuiet else {
+                    launchPhase = nil
                     isQuiet = false
                     state = .idle
                     pending = nil
