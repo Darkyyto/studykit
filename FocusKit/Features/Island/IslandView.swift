@@ -303,10 +303,18 @@ struct IslandView: View {
                     .foregroundStyle(.white.opacity(0.4))
                 Spacer(minLength: 0)
                 if stats.streak > 0 {
-                    Label("\(stats.streak)", systemImage: "flame.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.rest.mid)
-                        .help("\(stats.streak) day streak")
+                    HStack(spacing: 4) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(LinearGradient(colors: [Color(hex: 0xFFD60A), Color(hex: 0xFF6A00)], startPoint: .top, endPoint: .bottom))
+                        Text("\(stats.streak)")
+                            .font(.system(size: 12.5, weight: .bold).monospacedDigit())
+                            .foregroundStyle(Color(hex: 0xFF9F0A))
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(Color(hex: 0xFF9F0A).opacity(0.18), in: .capsule)
+                    .help("\(stats.streak) day streak")
                 }
             }
             Spacer(minLength: 10)

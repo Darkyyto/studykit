@@ -576,6 +576,7 @@ private final class NotchPanel: NSPanel {
         isOpaque = false
         hasShadow = false
         hidesOnDeactivate = false
+        canHide = false
         isReleasedWhenClosed = false
         isMovable = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]

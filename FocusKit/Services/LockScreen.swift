@@ -60,6 +60,7 @@ final class LockScreen {
         panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
+        panel.canHide = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
         let hosting = NSHostingView(rootView: content.environment(\.colorScheme, .dark).environment(\.appearsActive, true))

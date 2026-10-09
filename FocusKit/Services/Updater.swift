@@ -267,7 +267,7 @@ final class Updater {
         fi
         case "$6" in
           none) ;;
-          quiet) open -g -j "$APP" --args --quiet-relaunch ;;
+          quiet) open -g "$APP" --args --quiet-relaunch ;;
           background) open -g "$APP" ;;
           *) open "$APP" ;;
         esac

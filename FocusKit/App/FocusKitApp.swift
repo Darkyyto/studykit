@@ -124,6 +124,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if NSApp.isHidden {
+            NSApp.unhide(nil)
+        }
         let center = NotificationCenter.default
         center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
             let window = note.object as? NSWindow
