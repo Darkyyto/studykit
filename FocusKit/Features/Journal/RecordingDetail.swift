@@ -37,7 +37,7 @@ struct RecordingDetail: View {
             HStack(spacing: 12) {
                 PlayerBar(playback: playback)
                 if stored.notes != nil {
-                    GlassSegmented(options: [false, true], selection: $showsOriginal, tint: Palette.ink) { $0 ? "Original" : "Polished" }
+                    GlassSegmented(options: [false, true], selection: $showsOriginal) { $0 ? "Original" : "Polished" }
                         .fixedSize()
                 }
             }

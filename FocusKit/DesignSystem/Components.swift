@@ -32,7 +32,7 @@ struct SurfaceCard<Content: View>: View {
 struct GlassSegmented<Value: Hashable & Sendable>: View {
     let options: [Value]
     @Binding var selection: Value
-    var tint: Color = Palette.ink
+    var tint: Color?
     let label: (Value) -> String
     @Namespace private var namespace
 
@@ -45,13 +45,13 @@ struct GlassSegmented<Value: Hashable & Sendable>: View {
                 } label: {
                     Text(label(option))
                         .font(.rounded(13, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? .white : Palette.inkSecondary)
+                        .foregroundStyle(isSelected ? (tint == nil ? Palette.canvas : .white) : Palette.inkSecondary)
                         .padding(.horizontal, 14)
                         .frame(height: 30)
                         .background {
                             if isSelected {
                                 Capsule()
-                                    .fill(tint)
+                                    .fill(tint ?? Palette.ink)
                                     .matchedGeometryEffect(id: "pill", in: namespace)
                             }
                         }
