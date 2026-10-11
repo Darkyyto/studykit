@@ -1,2 +1,2 @@
 <!-- silent -->
-- The tabs in the notch no longer slip under the camera
+- Fixed a freeze that could leave the lock screen and the notch stuck when Spotify or Music did not respond

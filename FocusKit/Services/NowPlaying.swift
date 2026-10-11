@@ -45,6 +45,7 @@ final class NowPlaying {
     @ObservationIgnored private var trackKey = ""
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var lastSync = Date.distantPast
+    @ObservationIgnored private var isSyncing = false
     @ObservationIgnored private var resync: Task<Void, Never>?
     @ObservationIgnored private let bridge = MediaBridge()
     @ObservationIgnored private var expectedPlaying: Bool?
@@ -87,10 +88,19 @@ final class NowPlaying {
     }
 
     func sync(force: Bool = false) {
-        guard force || Date.now.timeIntervalSince(lastSync) > 1.5 else { return }
+        guard !isSyncing, force || Date.now.timeIntervalSince(lastSync) > 1.5 else { return }
         lastSync = .now
+        isSyncing = true
+        let running = [Player.spotify, .music].filter(Self.isRunning)
+        Task {
+            defer { isSyncing = false }
+            await sync(running)
+        }
+    }
+
+    private func sync(_ running: [Player]) async {
         var found: [Update] = []
-        for candidate in [Player.spotify, .music] where Self.isRunning(candidate) {
+        for candidate in running {
             let script = """
                 tell application "\(candidate.scriptName)"
                     if player state is stopped then return ""
@@ -99,7 +109,7 @@ final class NowPlaying {
                     return (name of t) & tab & (artist of t) & tab & (player state as text) & tab & (d as text) & tab & (player position as text)
                 end tell
                 """
-            guard let result = Self.run(script)?.stringValue, !result.isEmpty else { continue }
+            guard let result = await Self.script(script)?.string, !result.isEmpty else { continue }
             let parts = result.components(separatedBy: "\t")
             guard parts.count >= 5 else { continue }
             let rawDuration = Double(parts[3].replacingOccurrences(of: ",", with: ".")) ?? 0
@@ -190,8 +200,8 @@ final class NowPlaying {
         NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, _ in
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1.5))
-                _ = Self.run("tell application \"\(player.scriptName)\" to play")
-                self.refreshIfNeeded()
+                _ = await Self.script("tell application \"\(player.scriptName)\" to play")
+                self.sync(force: true)
             }
         }
     }
@@ -204,7 +214,8 @@ final class NowPlaying {
 
     private func command(_ verb: String) {
         guard let player, Self.isRunning(player) else { return }
-        Self.run("tell application \"\(player.scriptName)\" to \(verb)")
+        let source = "tell application \"\(player.scriptName)\" to \(verb)"
+        Task { _ = await Self.script(source) }
     }
 
     private func apply(_ update: Update?, force: Bool = false) {
@@ -228,10 +239,15 @@ final class NowPlaying {
         let current = elapsed(at: .now)
         if let value = update.position {
             position = value
-        } else if update.player == .music, let value = Self.run("tell application \"Music\" to player position")?.doubleValue {
-            position = value
         } else {
             position = sameTrack ? current : 0
+            if update.player == .music {
+                Task {
+                    guard let value = await Self.script("tell application \"Music\" to player position")?.number, player == .music else { return }
+                    position = value
+                    positionDate = .now
+                }
+            }
         }
         positionDate = .now
         player = update.player
@@ -297,13 +313,13 @@ final class NowPlaying {
             var image: NSImage?
             switch player {
             case .spotify:
-                if let string = Self.run("tell application \"Spotify\" to artwork url of current track")?.stringValue,
+                if let string = await Self.script("tell application \"Spotify\" to artwork url of current track")?.string,
                    let url = URL(string: string),
                    let (data, _) = try? await URLSession.shared.data(from: url) {
                     image = NSImage(data: data)
                 }
             case .music:
-                if let data = Self.run("tell application \"Music\" to get raw data of artwork 1 of current track")?.data {
+                if let data = await Self.script("tell application \"Music\" to get raw data of artwork 1 of current track")?.data {
                     image = NSImage(data: data)
                 }
             }
@@ -333,10 +349,23 @@ final class NowPlaying {
         !NSRunningApplication.runningApplications(withBundleIdentifier: player.rawValue).isEmpty
     }
 
-    @discardableResult
-    private static func run(_ source: String) -> NSAppleEventDescriptor? {
-        var error: NSDictionary?
-        return NSAppleScript(source: source)?.executeAndReturnError(&error)
+    private struct ScriptResult: Sendable {
+        let string: String?
+        let number: Double?
+        let data: Data
+    }
+
+    private nonisolated static let scriptQueue = DispatchQueue(label: "dev.focuskit.nowplaying.script", qos: .userInitiated)
+
+    private nonisolated static func script(_ source: String) async -> ScriptResult? {
+        await withCheckedContinuation { continuation in
+            scriptQueue.async {
+                var error: NSDictionary?
+                let wrapped = "with timeout of 3 seconds\n\(source)\nend timeout"
+                let result = NSAppleScript(source: wrapped)?.executeAndReturnError(&error)
+                continuation.resume(returning: result.map { ScriptResult(string: $0.stringValue, number: $0.descriptorType == typeIEEE64BitFloatingPoint || $0.descriptorType == typeIEEE32BitFloatingPoint || $0.descriptorType == typeSInt32 ? $0.doubleValue : nil, data: $0.data) })
+            }
+        }
     }
 
     private static func averageColor(of image: NSImage) -> Color? {
