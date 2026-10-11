@@ -9,6 +9,7 @@ struct MenuBarLabel: View {
 struct MenuBarMenu: View {
     @Environment(Updater.self) private var updater
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         Text("FocusKit \(Updater.currentVersion)")
@@ -16,8 +17,8 @@ struct MenuBarMenu: View {
         Button("Open FocusKit") {
             openMain()
         }
-        SettingsLink {
-            Text("Settings…")
+        Button("Settings…") {
+            AppDelegate.showSettings(openSettings)
         }
         .keyboardShortcut(",")
         Button("Check for Updates…") {

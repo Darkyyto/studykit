@@ -132,6 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let window = note.object as? NSWindow
             MainActor.assumeIsolated {
                 if AppDelegate.isMain(window) { AppDelegate.mainWindowClosed() }
+                if AppDelegate.isSettings(window), !NSApp.windows.contains(where: { AppDelegate.isMain($0) && $0.isVisible }) {
+                    AppDelegate.mainWindowClosed()
+                }
             }
         }
         center.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
@@ -143,6 +146,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    @MainActor
+    static func showSettings(_ openSettings: OpenSettingsAction) {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+        }
+        NSApp.activate()
+        openSettings()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            guard let window = NSApp.windows.first(where: isSettings) else { return }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate()
+        }
+    }
+
+    @MainActor
+    private static func isSettings(_ window: NSWindow?) -> Bool {
+        window?.identifier?.rawValue.localizedStandardContains("settings") == true
     }
 
     @MainActor

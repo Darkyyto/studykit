@@ -172,8 +172,7 @@ struct IslandView: View {
                 NSApp.activate()
             }
             Button("Settings…") {
-                openSettings()
-                NSApp.activate()
+                AppDelegate.showSettings(openSettings)
             }
             Divider()
             Button("Quit FocusKit") { NSApp.terminate(nil) }

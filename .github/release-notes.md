@@ -1,3 +1,2 @@
 <!-- silent -->
-- A livelier streak in the notch
-- The notch stays visible after an update and when you hide FocusKit
+- Settings opens straight from the menu bar and the notch, even when FocusKit's window is closed
