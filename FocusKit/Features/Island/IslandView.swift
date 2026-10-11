@@ -191,6 +191,13 @@ struct IslandView: View {
         }
     }
 
+    private var tabWidth: CGFloat {
+        let count = CGFloat(showsTray ? 5 : 4)
+        let side = (IslandController.expandedSize.width - max(controller.notch.width, 100)) / 2
+        let room = side - 14 - 14 - 6 - (count - 1) * 2
+        return max(20, min(28, (room / count).rounded(.down)))
+    }
+
     private var header: some View {
         HStack(spacing: 0) {
             HStack(spacing: 2) {
@@ -204,7 +211,7 @@ struct IslandView: View {
             }
             .padding(3)
             .background(.white.opacity(0.06), in: .capsule)
-            .padding(.leading, 16)
+            .padding(.leading, 14)
             Spacer(minLength: max(controller.notch.width, 100))
             HStack(spacing: 10) {
                 Text(Date.now.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
@@ -224,7 +231,7 @@ struct IslandView: View {
             Image(systemName: symbol)
                 .font(.system(size: 11.5, weight: .semibold))
                 .foregroundStyle(isSelected ? .white : .white.opacity(0.45))
-                .frame(width: 28, height: 20)
+                .frame(width: tabWidth, height: 20)
                 .background {
                     if isSelected {
                         Capsule()
