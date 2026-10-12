@@ -1,2 +1,1 @@
-<!-- silent -->
-- FocusKit now uses much less energy in the background
+- Fixed a problem where FocusKit could get stuck after a background update, with the window and the notch no longer responding

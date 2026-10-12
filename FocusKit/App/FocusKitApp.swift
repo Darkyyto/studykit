@@ -32,6 +32,13 @@ struct FocusKitApp: App {
         let updater = Updater()
         _updater = State(initialValue: updater)
         updater.canRestart = { !engine.isActive && !recorder.isActive && island.isAtRest && island.tray.urls.isEmpty }
+        AppDelegate.needsTimeToQuit = { recorder.isActive }
+        AppDelegate.quitNow = {
+            if engine.isActive {
+                engine.stop()
+            }
+            updater.installBeforeQuitting()
+        }
         AppDelegate.beforeTerminate = {
             if engine.isActive {
                 engine.stop()
@@ -112,6 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openMainWindow = Notification.Name("FocusKitOpenMainWindow")
     static let isQuietLaunch = CommandLine.arguments.contains("--quiet-relaunch")
     @MainActor static var beforeTerminate: (@MainActor () async -> Void)?
+    @MainActor static var quitNow: (@MainActor () -> Void)?
+    @MainActor static var needsTimeToQuit: (@MainActor () -> Bool)?
 
     private static var keepsRunning: Bool {
         UserDefaults.standard.object(forKey: Preference.keepsRunning) as? Bool ?? true
@@ -202,6 +211,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Self.needsTimeToQuit?() != true {
+            Self.quitNow?()
+            return .terminateNow
+        }
         guard let beforeTerminate = Self.beforeTerminate else { return .terminateNow }
         Task { @MainActor in
             await beforeTerminate()

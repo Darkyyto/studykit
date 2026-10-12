@@ -228,12 +228,12 @@ final class Updater {
             NSWorkspace.shared.open(url)
             Task {
                 try? await Task.sleep(for: .seconds(1.2))
-                NSApp.terminate(nil)
+                Self.quitSoon()
             }
             return
         }
         if launchInstaller(url, relaunch: .open) {
-            NSApp.terminate(nil)
+            Self.quitSoon()
         } else {
             state = .failed("FocusKit could not install the update by itself. Download it from the release page.")
         }
@@ -285,6 +285,10 @@ final class Updater {
         }
     }
 
+    private static func quitSoon() {
+        NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0.05)
+    }
+
     func installBeforeQuitting() {
         guard let quietUpdate else { return }
         stopWaitingQuietly()
@@ -314,7 +318,7 @@ final class Updater {
         guard idle > 120, !LockScreen.isLocked else { return }
         stopWaitingQuietly()
         if launchInstaller(quietUpdate, relaunch: showsWindow ? .background : .quiet) {
-            NSApp.terminate(nil)
+            Self.quitSoon()
         }
     }
 
