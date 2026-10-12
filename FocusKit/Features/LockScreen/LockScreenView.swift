@@ -20,36 +20,16 @@ struct LockScreenView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                VStack(spacing: 14) {
-                    if showsWidgets, showsGreeting {
-                        greeting(at: context.date)
-                    }
-                    HStack(spacing: 12) {
-                        if showsWidgets, showsSession, engine.isActive, let plan = engine.plan {
-                            session(plan, at: context.date)
-                        }
-                        if showsWidgets, showsBattery, let battery = DeviceWatcher.batteryState() {
-                            batteryWidget(battery)
-                        }
-                        if showsWidgets, showsAudio, let device = DeviceWatcher.bluetoothOutputs().values.sorted().first {
-                            audioWidget(device)
-                        }
-                        if showsWidgets, showsCalendar, calendar.access == .granted, let event = calendar.upcoming.first {
-                            eventWidget(event, at: context.date)
-                        }
-                        if showsWidgets, showsMusic, nowPlaying.hasTrack {
-                            musicWidget
-                        }
-                    }
+            ZStack(alignment: .top) {
+                if lockScreen.isShowing {
+                    widgets
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, proxy.size.height * 0.36)
+                        .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.top, proxy.size.height * 0.36)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .opacity(lockScreen.isShowing ? 1 : 0)
-                .scaleEffect(lockScreen.isShowing ? 1 : 0.96)
-                .animation(.spring(response: 0.6, dampingFraction: 0.9), value: lockScreen.isShowing)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .animation(.spring(response: 0.6, dampingFraction: 0.9), value: lockScreen.isShowing)
             .overlay(alignment: .top) {
                 if showsLockInNotch, let notch = Self.notch {
                     LockedNotch(notch: notch, isShowing: lockScreen.isShowing)
@@ -59,6 +39,37 @@ struct LockScreenView: View {
         .foregroundStyle(.white)
         .onChange(of: lockScreen.isShowing) { _, showing in
             if showing { calendar.refresh() }
+        }
+    }
+
+    private var widgets: some View {
+        VStack(spacing: 14) {
+            if showsWidgets, showsGreeting {
+                TimelineView(.everyMinute) { context in
+                    greeting(at: context.date)
+                }
+            }
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                HStack(spacing: 12) {
+                    if showsWidgets, showsSession, engine.isActive, let plan = engine.plan {
+                        TimelineView(.periodic(from: .now, by: 1)) { tick in
+                            session(plan, at: tick.date)
+                        }
+                    }
+                    if showsWidgets, showsBattery, let battery = DeviceWatcher.batteryState() {
+                        batteryWidget(battery)
+                    }
+                    if showsWidgets, showsAudio, let device = DeviceWatcher.bluetoothOutputs().values.sorted().first {
+                        audioWidget(device)
+                    }
+                    if showsWidgets, showsCalendar, calendar.access == .granted, let event = calendar.upcoming.first {
+                        eventWidget(event, at: context.date)
+                    }
+                    if showsWidgets, showsMusic, nowPlaying.hasTrack {
+                        musicWidget
+                    }
+                }
+            }
         }
     }
 
@@ -79,7 +90,6 @@ struct LockScreenView: View {
         .padding(.horizontal, 16)
         .frame(width: width, height: 72)
         .glassEffect(glass, in: .rect(cornerRadius: 24, style: .continuous))
-        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
     }
 
     private func label(_ title: String, _ detail: String) -> some View {
@@ -108,8 +118,8 @@ struct LockScreenView: View {
             detail = today > 0 ? "\(today.compactDuration) focused today" : "Ready when you are"
         }
         return HStack(spacing: 14) {
-            Smiley(palette: mode.palette, asleep: asleep)
-                .frame(width: 50, height: 50)
+            Mascot(palette: mode.palette, mood: engine.isActive ? .focused : asleep ? .asleep : .awake)
+                .frame(width: 54, height: 54)
             VStack(alignment: .leading, spacing: 2) {
                 Text(name.isEmpty ? part : "\(part), \(name)")
                     .font(.rounded(18, weight: .bold))
@@ -123,7 +133,6 @@ struct LockScreenView: View {
         .padding(.trailing, 22)
         .frame(height: 74)
         .glassEffect(glass, in: .capsule)
-        .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
     }
 
     private func session(_ plan: FocusPlan, at date: Date) -> some View {
@@ -232,86 +241,5 @@ private struct LockedNotch: View {
                     .opacity(isShowing ? 1 : 0)
             }
             .animation(.spring(response: 0.5, dampingFraction: 0.85), value: isShowing)
-    }
-}
-
-struct Smiley: View {
-    let palette: ModePalette
-    let asleep: Bool
-
-    var body: some View {
-        GeometryReader { proxy in
-            let side = min(proxy.size.width, proxy.size.height)
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: [Color(hex: 0xFFD27A), Color(hex: 0xFF9F5A)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .overlay {
-                        Circle()
-                            .fill(RadialGradient(colors: [.white.opacity(0.55), .clear], center: UnitPoint(x: 0.3, y: 0.25), startRadius: 0, endRadius: side * 0.5))
-                    }
-                    .shadow(color: Color(hex: 0xFF9F5A).opacity(0.45), radius: side * 0.18, y: side * 0.06)
-                HStack(spacing: side * 0.42) {
-                    Ellipse().fill(Color(hex: 0xFF6F8A).opacity(0.45))
-                    Ellipse().fill(Color(hex: 0xFF6F8A).opacity(0.45))
-                }
-                .frame(width: side * 0.78, height: side * 0.1)
-                .offset(y: side * 0.1)
-                eyes(side: side)
-                    .offset(y: -side * 0.06)
-                Smile()
-                    .stroke(Color(hex: 0x4A2A12), style: StrokeStyle(lineWidth: side * 0.06, lineCap: .round))
-                    .frame(width: side * (asleep ? 0.18 : 0.34), height: side * (asleep ? 0.06 : 0.14))
-                    .offset(y: side * 0.2)
-            }
-            .frame(width: side, height: side)
-            .keyframeAnimator(initialValue: 0.0, repeating: true) { content, bob in
-                content.offset(y: bob * side * 0.03)
-            } keyframes: { _ in
-                CubicKeyframe(1, duration: 1.6)
-                CubicKeyframe(0, duration: 1.6)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func eyes(side: CGFloat) -> some View {
-        if asleep {
-            HStack(spacing: side * 0.22) {
-                ClosedEye().stroke(Color(hex: 0x4A2A12), style: StrokeStyle(lineWidth: side * 0.05, lineCap: .round))
-                ClosedEye().stroke(Color(hex: 0x4A2A12), style: StrokeStyle(lineWidth: side * 0.05, lineCap: .round))
-            }
-            .frame(width: side * 0.46, height: side * 0.07)
-        } else {
-            HStack(spacing: side * 0.22) {
-                Capsule().fill(Color(hex: 0x4A2A12))
-                Capsule().fill(Color(hex: 0x4A2A12))
-            }
-            .frame(width: side * 0.3, height: side * 0.18)
-            .keyframeAnimator(initialValue: 1.0, repeating: true) { content, scale in
-                content.scaleEffect(x: 1, y: scale)
-            } keyframes: { _ in
-                LinearKeyframe(1, duration: 3.6)
-                CubicKeyframe(0.1, duration: 0.08)
-                CubicKeyframe(1, duration: 0.12)
-            }
-        }
-    }
-}
-
-private struct Smile: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY * 2 - rect.minY))
-        return path
-    }
-}
-
-private struct ClosedEye: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY), control: CGPoint(x: rect.midX, y: rect.maxY))
-        return path
     }
 }

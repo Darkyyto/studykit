@@ -1,3 +1,3 @@
-- Fixed a problem after background updates that could leave an invisible window blocking clicks on the screen
-- Background updates now wait until you step away from your Mac, so they never interrupt you
-- The lock screen widgets always match whether your Mac is locked
+<!-- silent -->
+- Meet Kit, a little mascot that greets you on the lock screen
+- Smoother lock screen widgets that use less battery
