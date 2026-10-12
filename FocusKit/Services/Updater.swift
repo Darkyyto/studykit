@@ -311,7 +311,7 @@ final class Updater {
         guard let quietUpdate, installsFixesAutomatically, canRestart?() ?? false else { return }
         let showsWindow = NSApp.windows.contains { $0.isVisible && $0.identifier?.rawValue.hasPrefix("main") == true }
         let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: UInt32.max)!)
-        guard !showsWindow || LockScreen.isLocked || idle > 120 else { return }
+        guard idle > 120, !LockScreen.isLocked else { return }
         stopWaitingQuietly()
         if launchInstaller(quietUpdate, relaunch: showsWindow ? .background : .quiet) {
             NSApp.terminate(nil)

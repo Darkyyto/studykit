@@ -66,6 +66,7 @@ struct FocusKitApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1120, height: 760)
         .defaultLaunchBehavior(AppDelegate.isQuietLaunch ? .suppressed : .automatic)
+        .restorationBehavior(.disabled)
         .commands { AppCommands(engine: engine) }
 
         MenuBarExtra(isInserted: $showsMenuBarExtra) {
@@ -126,6 +127,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if NSApp.isHidden {
             NSApp.unhide(nil)
+        }
+        if Self.isQuietLaunch {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                MainActor.assumeIsolated {
+                    for window in NSApp.windows where AppDelegate.isMain(window) && window.isVisible {
+                        window.close()
+                    }
+                    NSApp.setActivationPolicy(.accessory)
+                }
+            }
         }
         let center = NotificationCenter.default
         center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in

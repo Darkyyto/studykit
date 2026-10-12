@@ -82,6 +82,11 @@ final class LockScreen {
         observers.append(NotificationCenter.default.addObserver(forName: Self.previewNotification, object: nil, queue: .main) { [weak self] _ in
             DispatchQueue.main.async { MainActor.assumeIsolated { self?.preview() } }
         })
+        if Self.isLocked {
+            show()
+        } else {
+            hide()
+        }
     }
 
     private func show(force: Bool = false) {
