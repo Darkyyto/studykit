@@ -1,1 +1,2 @@
-- Fixed a problem where FocusKit could get stuck after a background update, with the window and the notch no longer responding
+<!-- silent -->
+- Kit has a fresh new look on the lock screen, with smoother animations
