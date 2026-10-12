@@ -44,8 +44,8 @@ struct Mascot: View {
         let hop = mood == .awake && hopCycle > 6.6 && hopCycle < 7.4 ? sin((hopCycle - 6.6) / 0.8 * .pi) : 0
         let squash = 1 + breath * 0.025 - hop * 0.04
         let blob = Blob(
-            lobes: 9,
-            depth: asleep ? 0.05 : 0.07,
+            lobes: 6,
+            depth: asleep ? 0.035 : 0.05,
             turn: t * (asleep ? 0.05 : 0.12),
             wobble: t * 1.3
         )
@@ -58,11 +58,13 @@ struct Mascot: View {
 
             ZStack {
                 blob
-                    .fill(RadialGradient(colors: [palette.mid.mix(with: .white, by: 0.45), palette.mid, palette.deep], center: UnitPoint(x: 0.36, y: 0.3), startRadius: 0, endRadius: s * 0.5))
+                    .fill(RadialGradient(colors: [Color(hex: 0xFFFFFF), Color(hex: 0xECEDF1), Color(hex: 0xB9BDC8)], center: UnitPoint(x: 0.36, y: 0.3), startRadius: 0, endRadius: s * 0.5))
                 blob
-                    .fill(RadialGradient(colors: [.white.opacity(0.55), .clear], center: UnitPoint(x: 0.32, y: 0.24), startRadius: 0, endRadius: s * 0.2))
+                    .fill(RadialGradient(colors: [.clear, palette.mid.opacity(0.28)], center: UnitPoint(x: 0.4, y: 0.36), startRadius: s * 0.26, endRadius: s * 0.44))
                 blob
-                    .fill(RadialGradient(colors: [.clear, palette.deep.mix(with: .black, by: 0.35).opacity(0.55)], center: UnitPoint(x: 0.42, y: 0.38), startRadius: s * 0.22, endRadius: s * 0.46))
+                    .fill(RadialGradient(colors: [.white.opacity(0.9), .clear], center: UnitPoint(x: 0.32, y: 0.22), startRadius: 0, endRadius: s * 0.16))
+                blob
+                    .fill(RadialGradient(colors: [.clear, Color(hex: 0x5A5F6E).opacity(0.45)], center: UnitPoint(x: 0.44, y: 0.36), startRadius: s * 0.24, endRadius: s * 0.47))
                 eyes(side: s, time: t)
                     .offset(y: -s * 0.02)
             }
@@ -78,15 +80,15 @@ struct Mascot: View {
         switch mood {
         case .asleep:
             HStack(spacing: s * 0.1) {
-                Capsule().fill(.white.opacity(0.85))
-                Capsule().fill(.white.opacity(0.85))
+                Capsule().fill(Color(hex: 0x1C1C22).opacity(0.85))
+                Capsule().fill(Color(hex: 0x1C1C22).opacity(0.85))
             }
             .frame(width: s * 0.28, height: s * 0.045)
             .offset(y: s * 0.03)
         case .focused:
             HStack(spacing: s * 0.11) {
-                Capsule().fill(.white).rotationEffect(.degrees(16))
-                Capsule().fill(.white).rotationEffect(.degrees(-16))
+                Capsule().fill(Color(hex: 0x1C1C22)).rotationEffect(.degrees(16))
+                Capsule().fill(Color(hex: 0x1C1C22)).rotationEffect(.degrees(-16))
             }
             .frame(width: s * 0.27, height: s * 0.12)
         case .awake:
@@ -94,11 +96,10 @@ struct Mascot: View {
             let blink = blinkPhase < 0.16 ? max(0.12, abs(blinkPhase - 0.08) / 0.08) : 1
             let look = (sin(t * 0.5) * 0.65 + sin(t * 1.4) * 0.35) * s * 0.03
             HStack(spacing: s * 0.1) {
-                Capsule().fill(.white)
-                Capsule().fill(.white)
+                Capsule().fill(Color(hex: 0x1C1C22)).rotationEffect(.degrees(-12))
+                Capsule().fill(Color(hex: 0x1C1C22)).rotationEffect(.degrees(-12))
             }
             .frame(width: s * 0.25, height: s * 0.19 * blink)
-            .rotationEffect(.degrees(-6))
             .offset(x: look)
         }
     }
