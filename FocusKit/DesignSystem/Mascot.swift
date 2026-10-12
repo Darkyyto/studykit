@@ -27,10 +27,10 @@ struct Mascot: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .drawingGroup()
-        .scaleEffect(appeared ? 1 : 0.6)
+        .scaleEffect(appeared ? 1 : 0.5)
         .opacity(appeared ? 1 : 0)
         .onAppear {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.62).delay(0.15)) { appeared = true }
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.6).delay(0.15)) { appeared = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSProcessInfoPowerStateDidChange).receive(on: RunLoop.main)) { _ in
             lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -39,126 +39,95 @@ struct Mascot: View {
 
     private func figure(side s: CGFloat, time t: Double) -> some View {
         let asleep = mood == .asleep
-        let float = sin(t * 2 * .pi / (asleep ? 5 : 3.4))
-        let tilt = sin(t * 2 * .pi / 6.8) * (asleep ? 1.5 : 3)
-        let glow = asleep ? 0.55 + 0.25 * sin(t * 2 * .pi / 5) : 1
+        let breath = sin(t * 2 * .pi / (asleep ? 5 : 3.2))
+        let hopCycle = t.truncatingRemainder(dividingBy: 8)
+        let hop = mood == .awake && hopCycle > 6.6 && hopCycle < 7.4 ? sin((hopCycle - 6.6) / 0.8 * .pi) : 0
+        let squash = 1 + breath * 0.025 - hop * 0.04
+        let blob = Blob(
+            lobes: 9,
+            depth: asleep ? 0.05 : 0.07,
+            turn: t * (asleep ? 0.05 : 0.12),
+            wobble: t * 1.3
+        )
 
         return ZStack {
             Ellipse()
-                .fill(.black.opacity(0.24))
-                .frame(width: s * 0.5 * (1 - float * 0.08), height: s * 0.06)
-                .offset(y: s * 0.43)
+                .fill(.black.opacity(0.22))
+                .frame(width: s * 0.56 * (1 - hop * 0.25), height: s * 0.07)
+                .offset(y: s * 0.42)
 
             ZStack {
-                antenna(side: s, time: t, glow: glow)
-                    .offset(y: -s * 0.33)
-                head(side: s)
-                face(side: s, time: t, glow: glow)
-                    .offset(y: s * 0.04)
+                blob
+                    .fill(RadialGradient(colors: [palette.mid.mix(with: .white, by: 0.45), palette.mid, palette.deep], center: UnitPoint(x: 0.36, y: 0.3), startRadius: 0, endRadius: s * 0.5))
+                blob
+                    .fill(RadialGradient(colors: [.white.opacity(0.55), .clear], center: UnitPoint(x: 0.32, y: 0.24), startRadius: 0, endRadius: s * 0.2))
+                blob
+                    .fill(RadialGradient(colors: [.clear, palette.deep.mix(with: .black, by: 0.35).opacity(0.55)], center: UnitPoint(x: 0.42, y: 0.38), startRadius: s * 0.22, endRadius: s * 0.46))
+                eyes(side: s, time: t)
+                    .offset(y: -s * 0.02)
             }
-            .rotationEffect(.degrees(tilt))
-            .offset(y: -float * s * 0.035)
+            .frame(width: s * 0.8, height: s * 0.8)
+            .scaleEffect(x: 2 - squash, y: squash, anchor: .bottom)
+            .offset(y: -s * 0.02 - hop * s * 0.09)
         }
         .frame(width: s, height: s)
     }
 
-    private func head(side s: CGFloat) -> some View {
-        RoundedRectangle(cornerRadius: s * 0.3, style: .continuous)
-            .fill(LinearGradient(colors: [Color(hex: 0xFFFFFF), Color(hex: 0xDADDE5)], startPoint: .top, endPoint: .bottom))
-            .overlay {
-                RoundedRectangle(cornerRadius: s * 0.3, style: .continuous)
-                    .fill(RadialGradient(colors: [.white.opacity(0.9), .clear], center: UnitPoint(x: 0.3, y: 0.12), startRadius: 0, endRadius: s * 0.36))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: s * 0.3, style: .continuous)
-                    .strokeBorder(.black.opacity(0.08), lineWidth: s * 0.012)
-            }
-            .frame(width: s * 0.8, height: s * 0.62)
-            .offset(y: s * 0.06)
-    }
-
-    private func face(side s: CGFloat, time t: Double, glow: Double) -> some View {
-        let screen = RoundedRectangle(cornerRadius: s * 0.2, style: .continuous)
-        return ZStack {
-            screen.fill(LinearGradient(colors: [Color(hex: 0x23232B), Color(hex: 0x111116)], startPoint: .top, endPoint: .bottom))
-            Ellipse()
-                .fill(RadialGradient(colors: [palette.mid.opacity(0.35 * glow), .clear], center: .center, startRadius: 0, endRadius: s * 0.28))
-                .frame(width: s * 0.6, height: s * 0.36)
-            eyes(side: s, time: t, glow: glow)
-            screen
-                .fill(LinearGradient(colors: [.white.opacity(0.1), .clear], startPoint: .top, endPoint: .center))
-        }
-        .frame(width: s * 0.64, height: s * 0.42)
-        .clipShape(screen)
-    }
-
     @ViewBuilder
-    private func eyes(side s: CGFloat, time t: Double, glow: Double) -> some View {
-        let color = palette.mid
+    private func eyes(side s: CGFloat, time t: Double) -> some View {
         switch mood {
         case .asleep:
-            HStack(spacing: s * 0.15) {
-                Capsule().fill(color.opacity(glow))
-                Capsule().fill(color.opacity(glow))
+            HStack(spacing: s * 0.1) {
+                Capsule().fill(.white.opacity(0.85))
+                Capsule().fill(.white.opacity(0.85))
             }
-            .frame(width: s * 0.31, height: s * 0.028)
+            .frame(width: s * 0.28, height: s * 0.045)
             .offset(y: s * 0.03)
         case .focused:
-            let scan = sin(t * 2 * .pi / 4) * s * 0.012
-            HStack(spacing: s * 0.13) {
-                Capsule().fill(color)
-                Capsule().fill(color)
+            HStack(spacing: s * 0.11) {
+                Capsule().fill(.white).rotationEffect(.degrees(16))
+                Capsule().fill(.white).rotationEffect(.degrees(-16))
             }
-            .frame(width: s * 0.3, height: s * 0.07)
-            .offset(x: scan)
+            .frame(width: s * 0.27, height: s * 0.12)
         case .awake:
-            let cycle = t.truncatingRemainder(dividingBy: 9)
-            let happy = cycle > 6.4 && cycle < 7.6
-            let blinkPhase = t.truncatingRemainder(dividingBy: 3.7)
+            let blinkPhase = t.truncatingRemainder(dividingBy: 3.8)
             let blink = blinkPhase < 0.16 ? max(0.12, abs(blinkPhase - 0.08) / 0.08) : 1
-            let look = (sin(t * 0.5) * 0.65 + sin(t * 1.4) * 0.35) * s * 0.035
-            if happy {
-                HStack(spacing: s * 0.12) {
-                    HappyEye().stroke(color, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
-                    HappyEye().stroke(color, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
-                }
-                .frame(width: s * 0.3, height: s * 0.06)
-                .offset(y: -s * 0.005)
-            } else {
-                HStack(spacing: s * 0.14) {
-                    Capsule().fill(color)
-                    Capsule().fill(color)
-                }
-                .frame(width: s * 0.26, height: s * 0.15 * blink)
-                .offset(x: look)
+            let look = (sin(t * 0.5) * 0.65 + sin(t * 1.4) * 0.35) * s * 0.03
+            HStack(spacing: s * 0.1) {
+                Capsule().fill(.white)
+                Capsule().fill(.white)
             }
-        }
-    }
-
-    private func antenna(side s: CGFloat, time t: Double, glow: Double) -> some View {
-        let pulse = 0.65 + 0.35 * sin(t * 2 * .pi / 2.2)
-        return VStack(spacing: 0) {
-            Circle()
-                .fill(palette.mid)
-                .frame(width: s * 0.075, height: s * 0.075)
-                .background {
-                    Circle()
-                        .fill(palette.mid.opacity(0.35 * pulse * glow))
-                        .frame(width: s * 0.17, height: s * 0.17)
-                }
-                .opacity(mood == .asleep ? glow : 1)
-            Capsule()
-                .fill(Color(hex: 0xC9CDD6))
-                .frame(width: s * 0.028, height: s * 0.07)
+            .frame(width: s * 0.25, height: s * 0.19 * blink)
+            .rotationEffect(.degrees(-6))
+            .offset(x: look)
         }
     }
 }
 
-private struct HappyEye: Shape {
+private struct Blob: Shape {
+    let lobes: Int
+    let depth: Double
+    let turn: Double
+    let wobble: Double
+
     func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2 / (1 + depth + 0.02)
+        let steps = 96
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY), control: CGPoint(x: rect.midX, y: rect.minY - rect.height))
+        for step in 0...steps {
+            let angle = Double(step) / Double(steps) * 2 * .pi
+            let lobe = cos(Double(lobes) * angle + turn) * depth
+            let drift = sin(2 * angle + wobble) * 0.02
+            let r = radius * (1 + lobe + drift)
+            let point = CGPoint(x: center.x + r * cos(angle), y: center.y + r * sin(angle))
+            if step == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        path.closeSubpath()
         return path
     }
 }

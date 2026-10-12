@@ -1,2 +1,2 @@
 <!-- silent -->
-- Kit has a fresh new look on the lock screen, with smoother animations
+- Kit is now a soft little creature on the lock screen, with livelier animations
