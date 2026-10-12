@@ -1385,19 +1385,84 @@ private struct Equalizer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: FrameRate.interval(active: false), paused: !isPlaying || reduceMotion)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            HStack(alignment: .bottom, spacing: 2) {
-                ForEach(0..<3, id: \.self) { index in
-                    let phase = t * (2.6 + Double(index) * 0.9) + Double(index) * 1.7
-                    Capsule()
-                        .fill(tint)
-                        .frame(width: 2.5, height: isPlaying && !reduceMotion ? 4 + 12 * (0.5 + 0.5 * sin(phase)) * (0.6 + 0.4 * sin(phase * 0.37)) : 3 + CGFloat(index % 2) * 2)
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .bottom)
+        EqualizerBars(color: NSColor(tint), isAnimating: isPlaying && !reduceMotion)
+    }
+}
+
+private struct EqualizerBars: NSViewRepresentable {
+    let color: NSColor
+    let isAnimating: Bool
+
+    func makeNSView(context: Context) -> EqualizerView {
+        EqualizerView()
+    }
+
+    func updateNSView(_ view: EqualizerView, context: Context) {
+        view.update(color: color, isAnimating: isAnimating)
+    }
+}
+
+private final class EqualizerView: NSView {
+    private let bars = (0..<3).map { _ in CALayer() }
+    private var isAnimating = false
+    private static let resting: [CGFloat] = [0.22, 0.36, 0.22]
+    private static let durations: [Double] = [0.82, 1.06, 0.7]
+    private static let shapes: [[CGFloat]] = [
+        [0.3, 0.95, 0.5, 0.8, 0.3],
+        [0.6, 0.35, 1, 0.45, 0.6],
+        [0.45, 0.8, 0.3, 1, 0.45],
+    ]
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        for (index, bar) in bars.enumerated() {
+            bar.anchorPoint = CGPoint(x: 0.5, y: 0)
+            bar.transform = CATransform3DMakeScale(1, Self.resting[index], 1)
+            layer?.addSublayer(bar)
         }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: isPlaying)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let width: CGFloat = 2.5
+        let spacing: CGFloat = 2
+        let start = (bounds.width - width * 3 - spacing * 2) / 2
+        for (index, bar) in bars.enumerated() {
+            bar.bounds = CGRect(x: 0, y: 0, width: width, height: bounds.height)
+            bar.position = CGPoint(x: start + CGFloat(index) * (width + spacing) + width / 2, y: 0)
+            bar.cornerRadius = width / 2
+        }
+        CATransaction.commit()
+    }
+
+    func update(color: NSColor, isAnimating animating: Bool) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        bars.forEach { $0.backgroundColor = color.cgColor }
+        CATransaction.commit()
+        guard animating != isAnimating else { return }
+        isAnimating = animating
+        for (index, bar) in bars.enumerated() {
+            if animating {
+                let animation = CAKeyframeAnimation(keyPath: "transform.scale.y")
+                animation.values = Self.shapes[index]
+                animation.duration = Self.durations[index]
+                animation.calculationMode = .cubic
+                animation.repeatCount = .infinity
+                animation.beginTime = CACurrentMediaTime() - Double(index) * 0.23
+                bar.add(animation, forKey: "level")
+            } else {
+                bar.removeAnimation(forKey: "level")
+                bar.transform = CATransform3DMakeScale(1, Self.resting[index], 1)
+            }
+        }
     }
 }
 

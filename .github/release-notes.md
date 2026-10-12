@@ -1,2 +1,2 @@
 <!-- silent -->
-- Kit gets a new pearl look on the lock screen
+- Much lower energy use while music is playing
