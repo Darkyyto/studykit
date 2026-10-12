@@ -37,7 +37,7 @@ final class FocusLog: @unchecked Sendable {
             /usr/bin/log stream --style compact --predicate "$1" &
             child=$!
             trap 'kill $child 2>/dev/null; exit 0' TERM INT HUP
-            while kill -0 $PPID 2>/dev/null && kill -0 $child 2>/dev/null; do sleep 2; done
+            while kill -0 $PPID 2>/dev/null && kill -0 $child 2>/dev/null; do sleep 15; done
             kill $child 2>/dev/null
             """,
             "sh",

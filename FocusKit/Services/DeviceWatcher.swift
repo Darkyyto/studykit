@@ -27,6 +27,7 @@ final class DeviceWatcher {
     @ObservationIgnored private var capsLock = false
     @ObservationIgnored private var batteryWarned: Int?
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var flagMonitors: [Any] = []
     @ObservationIgnored private var powerSource: CFRunLoopSource?
     @ObservationIgnored private var started = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
@@ -53,10 +54,21 @@ final class DeviceWatcher {
             MainActor.assumeIsolated { self?.devicesChanged() }
         }
 
-        timer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkCapsLock() }
         }
-        timer?.tolerance = 0.1
+        let local = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            MainActor.assumeIsolated { self?.checkCapsLock() }
+            return event
+        }
+        flagMonitors = [global, local].compactMap { $0 }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard !AXIsProcessTrusted() else { return }
+                self?.checkCapsLock()
+            }
+        }
+        timer?.tolerance = 0.2
 
         for (name, isOn) in [("_NSDoNotDisturbEnabledNotification", true), ("_NSDoNotDisturbDisabledNotification", false)] {
             observers.append(DistributedObserver(name) { [weak self] note in

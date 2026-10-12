@@ -29,6 +29,7 @@ final class SystemHUD {
     @ObservationIgnored private var lastBrightness: Double?
     @ObservationIgnored private var lastCharging: Bool?
     @ObservationIgnored private var brightnessTimer: Timer?
+    @ObservationIgnored private var brightnessBurst: Task<Void, Never>?
     @ObservationIgnored private var powerSource: CFRunLoopSource?
     @ObservationIgnored private let readBrightness: (@convention(c) (UInt32, UnsafeMutablePointer<Float>) -> Int32)?
     @ObservationIgnored private let writeBrightness: (@convention(c) (UInt32, Float) -> Int32)?
@@ -73,10 +74,13 @@ final class SystemHUD {
         observeDefaultDevice()
         bindVolume()
         lastBrightness = brightness()
-        brightnessTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pollBrightness() }
+        brightnessTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard UserDefaults.standard.bool(forKey: Self.automaticBrightnessKey) else { return }
+                self?.pollBrightness()
+            }
         }
-        brightnessTimer?.tolerance = 0.1
+        brightnessTimer?.tolerance = 0.3
         watchBrightnessKeys()
         lastCharging = Self.batteryState()?.charging
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -296,15 +300,29 @@ final class SystemHUD {
         publish(.brightness, value: value)
     }
 
+    private func brightnessKeyPressed() {
+        lastBrightnessKey = .now
+        brightnessBurst?.cancel()
+        brightnessBurst = Task { [weak self] in
+            for _ in 0..<15 {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard !Task.isCancelled else { return }
+                self?.pollBrightness()
+            }
+        }
+    }
+
     private func watchBrightnessKeys() {
         let global = NSEvent.addGlobalMonitorForEvents(matching: .systemDefined) { [weak self] event in
             let isBrightness = Self.isBrightnessKey(event)
             MainActor.assumeIsolated {
-                if isBrightness { self?.lastBrightnessKey = .now }
+                if isBrightness { self?.brightnessKeyPressed() }
             }
         }
         let local = NSEvent.addLocalMonitorForEvents(matching: .systemDefined) { [weak self] event in
-            if Self.isBrightnessKey(event) { self?.lastBrightnessKey = .now }
+            if Self.isBrightnessKey(event) {
+                MainActor.assumeIsolated { self?.brightnessKeyPressed() }
+            }
             return event
         }
         keyMonitors = [global, local].compactMap { $0 }

@@ -54,7 +54,8 @@ final class IslandController {
     @ObservationIgnored let recorder: VoiceRecorder
     @ObservationIgnored let nowPlaying: NowPlaying
     @ObservationIgnored private var panel: NotchPanel?
-    @ObservationIgnored private var pointerWatcher: Timer?
+    @ObservationIgnored private var pointerMonitors: [Any] = []
+    @ObservationIgnored private var pressWatcher: Timer?
     @ObservationIgnored private var exitWatcher: Timer?
     @ObservationIgnored private var outsideSince: Date?
     @ObservationIgnored private var hoverIntent: Task<Void, Never>?
@@ -147,6 +148,8 @@ final class IslandController {
             NSApplication.didUnhideNotification,
             NSWindow.didMiniaturizeNotification,
             NSWindow.didDeminiaturizeNotification,
+            NSWindow.willCloseNotification,
+            NSWindow.didBecomeKeyNotification,
             UserDefaults.didChangeNotification,
         ]
         observers = refreshers.map { name in
@@ -299,15 +302,55 @@ final class IslandController {
         reposition()
         panel.ignoresMouseEvents = true
         panel.orderFrontRegardless()
-        pointerWatcher = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pointerMoved() }
-        }
-        pointerWatcher?.tolerance = 0.02
+        watchPointer()
         watchSwipes()
+        trackActivity()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()
-                try? await Task.sleep(for: .seconds(1))
+                try? await Task.sleep(for: .seconds(5))
+            }
+        }
+    }
+
+    private func watchPointer() {
+        let kinds: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .leftMouseUp, .leftMouseDown]
+        let global = NSEvent.addGlobalMonitorForEvents(matching: kinds) { [weak self] _ in
+            MainActor.assumeIsolated { self?.pointerEvent() }
+        }
+        let local = NSEvent.addLocalMonitorForEvents(matching: kinds) { [weak self] event in
+            MainActor.assumeIsolated { self?.pointerEvent() }
+            return event
+        }
+        pointerMonitors = [global, local].compactMap { $0 }
+    }
+
+    private func pointerEvent() {
+        pointerMoved()
+        guard pressWatcher == nil, NSEvent.pressedMouseButtons & 1 != 0 else { return }
+        pressWatcher = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.pointerMoved()
+                if NSEvent.pressedMouseButtons & 1 == 0 {
+                    self.pressWatcher?.invalidate()
+                    self.pressWatcher = nil
+                }
+            }
+        }
+        pressWatcher?.tolerance = 0.02
+    }
+
+    private func trackActivity() {
+        withObservationTracking {
+            _ = hasActivity
+            _ = wing
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.scheduleRefresh()
+                    self?.trackActivity()
+                }
             }
         }
     }

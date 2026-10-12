@@ -68,10 +68,10 @@ final class ClipboardHistory {
         refreshAccess()
         guard timer == nil else { return }
         lastChange = NSPasteboard.general.changeCount
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.poll() }
         }
-        timer?.tolerance = 0.2
+        timer?.tolerance = 0.3
     }
 
     func syncWithPreference() {
