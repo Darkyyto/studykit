@@ -1,2 +1,2 @@
 <!-- silent -->
-- Much lower energy use while music is playing
+- Behind-the-scenes improvements to updates and data safety

@@ -12,6 +12,8 @@ final class Updater {
         let page: URL
         var isSilent = false
         var archive: URL?
+        var bundleID: String?
+        var appName: String?
     }
 
     enum State: Equatable {
@@ -137,10 +139,12 @@ final class Updater {
             let diskImage = latest.diskImage
             let page = latest.page
             let archive = latest.archive
+            let bundleID = latest.bundleID
+            let appName = latest.appName
             let body = latest.notes
             let silent = body.contains("<!-- silent -->")
             let notes = body.replacingOccurrences(of: "<!-- silent -->", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-            let release = Release(version: version, notes: notes, diskImage: diskImage, page: page, isSilent: silent, archive: archive)
+            let release = Release(version: version, notes: notes, diskImage: diskImage, page: page, isSilent: silent, archive: archive, bundleID: bundleID, appName: appName)
             if quietUpdate != nil, pending?.version == version, !userInitiated {
                 return
             }
@@ -166,6 +170,8 @@ final class Updater {
         let diskImage: URL
         let page: URL
         var archive: URL?
+        var bundleID: String?
+        var appName: String?
     }
 
     private struct Manifest: Decodable {
@@ -174,6 +180,8 @@ final class Updater {
         let dmg: String
         let page: String
         let zip: String?
+        let bundleID: String?
+        let appName: String?
     }
 
     private static func latest() async throws -> Latest? {
@@ -185,7 +193,7 @@ final class Updater {
            let decoded = try? JSONDecoder().decode(Manifest.self, from: data),
            let diskImage = URL(string: decoded.dmg),
            let page = URL(string: decoded.page) {
-            return Latest(version: decoded.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), notes: decoded.notes, diskImage: diskImage, page: page, archive: decoded.zip.flatMap(URL.init(string:)))
+            return Latest(version: decoded.version.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), notes: decoded.notes, diskImage: diskImage, page: page, archive: decoded.zip.flatMap(URL.init(string:)), bundleID: decoded.bundleID, appName: decoded.appName)
         }
         var request = URLRequest(url: URL(string: "https://api.github.com/repos/\(repository)/releases/latest")!)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
@@ -241,29 +249,49 @@ final class Updater {
 
     @discardableResult
     private func launchInstaller(_ url: URL, relaunch: Relaunch) -> Bool {
-        var destination = Bundle.main.bundleURL.standardizedFileURL
-        if destination.path(percentEncoded: false).contains("/AppTranslocation/") {
-            destination = URL(fileURLWithPath: "/Applications/FocusKit.app")
+        var current = Bundle.main.bundleURL.standardizedFileURL
+        if current.path(percentEncoded: false).contains("/AppTranslocation/") {
+            current = URL(fileURLWithPath: "/Applications/\(current.lastPathComponent)")
+        }
+        var destination = current
+        var replaced = ""
+        if let name = pending?.appName?.trimmingCharacters(in: .whitespaces),
+           !name.isEmpty, name.allSatisfy({ $0.isLetter || $0.isNumber || $0 == " " || $0 == "-" }),
+           name + ".app" != current.lastPathComponent {
+            destination = current.deletingLastPathComponent().appending(path: name + ".app", directoryHint: .isDirectory)
+            replaced = Self.plainPath(current)
         }
         let script = """
         [ -n "$1" ] && [ -n "$2" ] && [ -n "$3" ] && [ -n "$4" ] && [ -n "$5" ] || exit 1
         STAGED="${2%/}"
         APP="${3%/}"
         WORK="${4%/}"
+        OLD="${7%/}"
         case "$APP" in */*.app) ;; *) exit 1 ;; esac
         while kill -0 "$1" 2>/dev/null; do sleep 0.1; done
         rm -rf "$APP.updating" "$APP.previous"
-        if { mv "$STAGED" "$APP.updating" 2>/dev/null || ditto "$STAGED" "$APP.updating"; } && mv "$APP" "$APP.previous"; then
-          if mv "$APP.updating" "$APP"; then
-            rm -rf "$APP.previous"
-            xattr -dr com.apple.quarantine "$APP" 2>/dev/null
+        if [ -e "$APP" ]; then
+          if { mv "$STAGED" "$APP.updating" 2>/dev/null || ditto "$STAGED" "$APP.updating"; } && mv "$APP" "$APP.previous"; then
+            if mv "$APP.updating" "$APP"; then
+              rm -rf "$APP.previous"
+              xattr -dr com.apple.quarantine "$APP" 2>/dev/null
+            else
+              mv "$APP.previous" "$APP"
+              touch "$5"
+            fi
           else
-            mv "$APP.previous" "$APP"
+            rm -rf "$APP.updating"
             touch "$5"
           fi
+        elif { mv "$STAGED" "$APP" 2>/dev/null || ditto "$STAGED" "$APP"; }; then
+          xattr -dr com.apple.quarantine "$APP" 2>/dev/null
         else
-          rm -rf "$APP.updating"
+          rm -rf "$APP"
           touch "$5"
+          APP="$OLD"
+        fi
+        if [ -n "$OLD" ] && [ "$OLD" != "$APP" ] && [ -d "$APP" ]; then
+          case "$OLD" in */*.app) rm -rf "$OLD" ;; esac
         fi
         case "$6" in
           none) ;;
@@ -276,7 +304,7 @@ final class Updater {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         try? FileManager.default.removeItem(at: Self.failureMarker)
-        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(FileManager.default.temporaryDirectory.appending(path: "FocusKitUpdate", directoryHint: .isDirectory)), Self.plainPath(Self.failureMarker), relaunch.rawValue]
+        process.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier), Self.plainPath(url), Self.plainPath(destination), Self.plainPath(FileManager.default.temporaryDirectory.appending(path: "FocusKitUpdate", directoryHint: .isDirectory)), Self.plainPath(Self.failureMarker), relaunch.rawValue, replaced]
         do {
             try process.run()
             return true
@@ -330,33 +358,35 @@ final class Updater {
         return path
     }
 
-    nonisolated private static func stage(_ diskImage: URL, in work: URL) async throws -> URL {
+    nonisolated private static func stage(_ diskImage: URL, in work: URL, accepting identifiers: Set<String>) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
             let mount = work.appending(path: "volume", directoryHint: .isDirectory)
             try FileManager.default.createDirectory(at: mount, withIntermediateDirectories: true)
             try run("/usr/bin/hdiutil", ["attach", "-quiet", "-nobrowse", "-readonly", "-noverify", "-noautofsck", "-mountpoint", mount.path(percentEncoded: false), diskImage.path(percentEncoded: false)])
             defer { try? run("/usr/bin/hdiutil", ["detach", "-quiet", "-force", mount.path(percentEncoded: false)]) }
             let source = mount.appending(path: "FocusKit.app", directoryHint: .isDirectory)
-            guard Bundle(url: source)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
+            guard let identifier = Bundle(url: source)?.bundleIdentifier, identifiers.contains(identifier) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
             let staged = work.appending(path: "FocusKit.app", directoryHint: .isDirectory)
             try? FileManager.default.removeItem(at: staged)
             try run("/usr/bin/ditto", [source.path(percentEncoded: false), staged.path(percentEncoded: false)])
+            try run("/usr/bin/codesign", ["--verify", "--strict", staged.path(percentEncoded: false)])
             try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staged.path(percentEncoded: false)])
             return staged
         }.value
     }
 
-    nonisolated private static func unpack(_ archive: URL, in work: URL) async throws -> URL {
+    nonisolated private static func unpack(_ archive: URL, in work: URL, accepting identifiers: Set<String>) async throws -> URL {
         try await Task.detached(priority: .userInitiated) {
             let folder = work.appending(path: "unpacked", directoryHint: .isDirectory)
             try? FileManager.default.removeItem(at: folder)
             try run("/usr/bin/ditto", ["-x", "-k", archive.path(percentEncoded: false), folder.path(percentEncoded: false)])
             let staged = folder.appending(path: "FocusKit.app", directoryHint: .isDirectory)
-            guard Bundle(url: staged)?.bundleIdentifier == Bundle.main.bundleIdentifier else {
+            guard let identifier = Bundle(url: staged)?.bundleIdentifier, identifiers.contains(identifier) else {
                 throw CocoaError(.fileReadCorruptFile)
             }
+            try run("/usr/bin/codesign", ["--verify", "--strict", staged.path(percentEncoded: false)])
             try? run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", staged.path(percentEncoded: false)])
             return staged
         }.value
@@ -407,7 +437,8 @@ final class Updater {
                 if SandboxMigration.isSandboxed {
                     state = .ready(destination)
                 } else {
-                    let staged = try await archive == nil ? Self.stage(destination, in: work) : Self.unpack(destination, in: work)
+                    let accepted = Set([Bundle.main.bundleIdentifier, release.bundleID].compactMap { $0 })
+                    let staged = try await archive == nil ? Self.stage(destination, in: work, accepting: accepted) : Self.unpack(destination, in: work, accepting: accepted)
                     state = .ready(staged)
                     if isQuiet {
                         if checkPermission() {
