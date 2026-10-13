@@ -81,6 +81,9 @@ struct IslandView: View {
             openWindow(id: "main")
             NSApp.activate()
         }
+        .onReceive(NotificationCenter.default.publisher(for: AppDelegate.openSettingsWindow)) { _ in
+            AppDelegate.showSettings(openSettings)
+        }
         .onChange(of: systemHUD.event) { _, event in
             if event != nil { controller.showSystemHUD() }
         }

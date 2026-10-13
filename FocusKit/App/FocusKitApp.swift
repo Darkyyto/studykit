@@ -11,7 +11,6 @@ struct FocusKitApp: App {
     @State private var nowPlaying: NowPlaying
     @State private var soundscape: Soundscape
     @State private var updater: Updater
-    @AppStorage(Preference.showsMenuBarExtra) private var showsMenuBarExtra = true
 
     init() {
         SandboxMigration.importDefaults()
@@ -49,6 +48,7 @@ struct FocusKitApp: App {
             updater.installBeforeQuitting()
         }
         DispatchQueue.main.async {
+            StatusMenu.install(updater: updater)
             Backup.onLaunch()
             updater.checkOnLaunch()
             enhancer.resumePending(for: Persona(rawValue: UserDefaults.standard.string(forKey: Preference.persona) ?? "") ?? .personal)
@@ -75,14 +75,6 @@ struct FocusKitApp: App {
         .defaultLaunchBehavior(AppDelegate.isQuietLaunch ? .suppressed : .automatic)
         .restorationBehavior(.disabled)
         .commands { AppCommands(engine: engine) }
-
-        MenuBarExtra(isInserted: $showsMenuBarExtra) {
-            MenuBarMenu()
-                .environment(updater)
-        } label: {
-            MenuBarLabel()
-        }
-        .menuBarExtraStyle(.menu)
 
         Settings {
             SettingsView()
@@ -117,6 +109,7 @@ enum Preference {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let openDocuments = Notification.Name("FocusKitOpenDocuments")
     static let openMainWindow = Notification.Name("FocusKitOpenMainWindow")
+    static let openSettingsWindow = Notification.Name("FocusKitOpenSettingsWindow")
     static let isQuietLaunch = CommandLine.arguments.contains("--quiet-relaunch")
     @MainActor static var beforeTerminate: (@MainActor () async -> Void)?
     @MainActor static var quitNow: (@MainActor () -> Void)?
