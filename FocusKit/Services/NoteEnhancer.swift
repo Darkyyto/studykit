@@ -51,6 +51,7 @@ final class NoteEnhancer {
     }
 
     func resumePending(for persona: Persona) {
+        repairTitles(for: persona)
         for var recording in library.recordings where recording.stage == .recording || recording.stage == .refining {
             if recording.stage == .recording {
                 recording.wasInterrupted = true
@@ -61,6 +62,34 @@ final class NoteEnhancer {
                 library.save(recording)
             }
             enhance(recording, for: persona)
+        }
+    }
+
+    private func repairTitles(for persona: Persona) {
+        for var recording in library.recordings where recording.title == recording.fileName {
+            let session = library.sessions.first { $0.recordingID == recording.id }
+            let intention = session?.intention.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let noun = session?.kind == .meeting ? "Meeting" : "Lecture"
+            if !intention.isEmpty {
+                recording.title = intention
+                recording.isNamed = true
+            } else {
+                recording.title = noun + ", " + recording.createdAt.formatted(.dateTime.weekday(.wide).hour().minute())
+                recording.isNamed = false
+            }
+            library.save(recording)
+            guard recording.isNamed != true, let text = recording.notes?.text, !text.isEmpty, availability == .available else { continue }
+            let id = recording.id
+            let fallback = recording.title
+            let language = Locale(identifier: recording.localeIdentifier).localizedString(forLanguageCode: recording.localeIdentifier) ?? recording.localeIdentifier
+            Task {
+                guard let digest = try? await Self.digest(String(text.prefix(Self.digestLength)), language: language, persona: persona),
+                      !digest.title.isEmpty,
+                      var current = library.recordings.first(where: { $0.id == id }),
+                      current.title == fallback else { return }
+                current.title = digest.title
+                library.save(current)
+            }
         }
     }
 

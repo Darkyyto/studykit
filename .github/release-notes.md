@@ -1,2 +1,2 @@
 <!-- silent -->
-- The menu bar menu opens instantly
+- Recordings keep the name you give the session

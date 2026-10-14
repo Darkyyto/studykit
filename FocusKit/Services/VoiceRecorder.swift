@@ -66,11 +66,11 @@ final class VoiceRecorder {
             errorMessage = error.localizedDescription
         }
 
-        let name = "\(UUID().uuidString).\(AudioCapture.fileExtension)"
+        let file = "\(UUID().uuidString).\(AudioCapture.fileExtension)"
         let capture = AudioCapture()
         do {
             try capture.start(
-                writingTo: library.recordingsDirectory.appending(path: name),
+                writingTo: library.recordingsDirectory.appending(path: file),
                 speechFormat: transcription?.format,
                 speechInput: transcription?.input
             ) { [weak self] level in
@@ -87,7 +87,7 @@ final class VoiceRecorder {
         self.goalID = goalID
         self.noun = noun
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        fileName = name
+        fileName = file
         transcriptionLocale = transcription?.locale
         state = .recording(since: .now)
         draftID = UUID()
