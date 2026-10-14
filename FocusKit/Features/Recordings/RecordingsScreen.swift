@@ -553,7 +553,8 @@ private struct RecordingRow<Actions: View>: View {
         case .transcribing:
             StatusPill(text: "Transcribing", tint: tint, isBusy: true)
         case .writing:
-            StatusPill(text: "Writing notes", tint: tint, isBusy: true)
+            StatusPill(text: enhancer.progress(of: recording).map { "Writing notes · \($0)%" } ?? "Writing notes", tint: tint, isBusy: true)
+                .contentTransition(.numericText())
         case nil:
             if recording.wasInterrupted == true {
                 StatusPill(text: "Recovered", tint: Palette.rest.deep, isBusy: false)

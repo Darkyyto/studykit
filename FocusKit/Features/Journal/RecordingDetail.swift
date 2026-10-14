@@ -58,7 +58,7 @@ struct RecordingDetail: View {
             .scrollIndicators(.never)
 
             if enhancer.isWorking(on: stored) {
-                PolishingBanner()
+                PolishingBanner(phase: enhancer.phase(of: stored), percent: enhancer.progress(of: stored))
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else if let failure = enhancer.failures[stored.id] {
                 ErrorBanner(message: failure) { enhancer.dismissFailure(for: stored) }
@@ -357,14 +357,28 @@ private struct ChecklistRow: View {
 }
 
 private struct PolishingBanner: View {
+    let phase: NoteEnhancer.Phase?
+    let percent: Int?
+
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "wand.and.sparkles")
                 .symbolEffect(.pulse, options: .repeating)
                 .foregroundStyle(FocusMode.orbit.palette.deep)
-            Text("Polishing grammar and writing a summary on this Mac…")
+            Text(phase == .transcribing ? "Transcribing the full recording on this Mac…" : "Polishing grammar and writing a summary on this Mac…")
                 .font(.rounded(13, weight: .medium))
                 .foregroundStyle(Palette.inkSecondary)
+            if let percent {
+                ProgressView(value: Double(percent), total: 100)
+                    .progressViewStyle(.linear)
+                    .tint(FocusMode.orbit.palette.deep)
+                    .frame(width: 80)
+                Text("\(percent)%")
+                    .font(.rounded(13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Palette.ink)
+                    .contentTransition(.numericText())
+                    .animation(Motion.standard, value: percent)
+            }
         }
         .padding(.horizontal, 16)
         .frame(height: 38)

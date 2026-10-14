@@ -1,2 +1,2 @@
 <!-- silent -->
-- Recordings keep the name you give the session
+- Shows how far along your notes are while they are being written

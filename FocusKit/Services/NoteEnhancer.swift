@@ -19,6 +19,7 @@ final class NoteEnhancer {
 
     private(set) var phases: [Recording.ID: Phase] = [:]
     private(set) var failures: [Recording.ID: String] = [:]
+    private(set) var progress: [Recording.ID: Double] = [:]
 
     @ObservationIgnored private let library: Library
     private static let chunkLength = 1_800
@@ -48,6 +49,10 @@ final class NoteEnhancer {
 
     func phase(of recording: Recording) -> Phase? {
         phases[recording.id]
+    }
+
+    func progress(of recording: Recording) -> Int? {
+        progress[recording.id].map { Int(($0 * 100).rounded()) }
     }
 
     func resumePending(for persona: Persona) {
@@ -100,7 +105,10 @@ final class NoteEnhancer {
             ?? recording.localeIdentifier
 
         Task {
-            defer { phases[recording.id] = nil }
+            defer {
+                phases[recording.id] = nil
+                progress[recording.id] = nil
+            }
             var marked: String?
             if recording.stage == .refining {
                 phases[recording.id] = .transcribing
@@ -122,8 +130,12 @@ final class NoteEnhancer {
             let transcript = (marked ?? current.transcript).trimmingCharacters(in: .whitespacesAndNewlines)
             guard availability == .available, !transcript.isEmpty else { return }
             phases[recording.id] = .writing
+            progress[recording.id] = 0
             do {
-                let polished = try await Self.polish(transcript, language: language)
+                let polished = try await Self.polish(transcript, language: language) { [weak self] fraction in
+                    self?.progress[recording.id] = fraction * 0.9
+                }
+                progress[recording.id] = 0.92
                 let excerpt = String(polished.prefix(Self.digestLength))
                 let digest = try? await Self.digest(excerpt, language: language, persona: persona)
                 guard var current = library.recordings.first(where: { $0.id == recording.id }) else { return }
@@ -162,12 +174,13 @@ final class NoteEnhancer {
         Self.describe(error)
     }
 
-    private static func polish(_ transcript: String, language: String) async throws -> String {
+    private static func polish(_ transcript: String, language: String, onProgress: (Double) -> Void) async throws -> String {
         var polished: [String] = []
         var refused = 0
         var lastError: Error?
         let pieces = chunks(of: transcript)
-        for chunk in pieces {
+        for (index, chunk) in pieces.enumerated() {
+            onProgress(Double(index) / Double(max(1, pieces.count)))
             let session = LanguageModelSession(model: model, instructions: """
                 You edit raw speech-to-text transcripts of lectures, meetings and voice notes, often recorded from far away or in a noisy room.
                 Rewrite the text you receive so it reads naturally, in \(language).
