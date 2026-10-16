@@ -52,15 +52,67 @@ final class FileTray {
         let fresh = urls.filter { url in
             url.isFileURL && !items.contains { $0.original == url || $0.url == url }
         }
-        guard !fresh.isEmpty else { return }
+        let links = urls.filter { ["http", "https"].contains($0.scheme?.lowercased()) }
+        guard !fresh.isEmpty || !links.isEmpty else { return }
         Task {
-            let stored = await Task.detached(priority: .userInitiated) { fresh.compactMap(Self.store) }.value
-            guard !stored.isEmpty else { return }
-            withAnimation(.spring(response: 0.36, dampingFraction: 0.85)) {
-                items.append(contentsOf: stored)
+            var stored = await Task.detached(priority: .userInitiated) { fresh.compactMap(Self.store) }.value
+            for link in links {
+                if Self.looksLikeImage(link), let data = await Self.download(link) {
+                    if let item = Self.write(data, named: link.lastPathComponent) { stored.append(item) }
+                } else if let item = Self.writeLink(link) {
+                    stored.append(item)
+                }
             }
-            save()
+            append(stored)
         }
+    }
+
+    /// Whatever is on the clipboard: copied files, an image (from a browser or a screenshot), a link, or text.
+    @discardableResult
+    func pasteFromClipboard() -> Bool {
+        let board = NSPasteboard.general
+        guard Set((board.types ?? []).map(\.rawValue)).isDisjoint(with: ClipboardHistory.privateTypes) else { return false }
+        if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+            add(urls)
+            return true
+        }
+        if let data = board.data(forType: .png) ?? board.data(forType: .tiff) {
+            Task {
+                let item = await Task.detached(priority: .userInitiated) { () -> Item? in
+                    let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) ?? data
+                    return Self.write(png, named: "Image \(Self.stamp()).png")
+                }.value
+                if let item { append([item]) }
+            }
+            return true
+        }
+        if let url = (board.readObjects(forClasses: [NSURL.self], options: nil) as? [URL])?.first(where: { ["http", "https"].contains($0.scheme?.lowercased()) }) {
+            add([url])
+            return true
+        }
+        guard let string = board.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines), !string.isEmpty else { return false }
+        if !string.contains(where: \.isWhitespace), let url = URL(string: string), ["http", "https"].contains(url.scheme?.lowercased()), url.host() != nil {
+            add([url])
+            return true
+        }
+        let title = String(string.prefix(32)).components(separatedBy: .newlines).first ?? "Text"
+        if let item = Self.write(Data(string.utf8), named: "\(Self.clean(title)).txt") {
+            append([item])
+            return true
+        }
+        return false
+    }
+
+    var clipboardHasContent: Bool {
+        NSPasteboard.general.types?.isEmpty == false
+    }
+
+    private func append(_ stored: [Item]) {
+        guard !stored.isEmpty else { return }
+        withAnimation(.spring(response: 0.36, dampingFraction: 0.85)) {
+            items.append(contentsOf: stored)
+        }
+        save()
     }
 
     func remove(_ item: Item) {
@@ -140,6 +192,52 @@ final class FileTray {
             try? manager.removeItem(at: directory)
             return manager.fileExists(atPath: source.path(percentEncoded: false)) ? Item(id: id, url: source, original: source) : nil
         }
+    }
+
+    private nonisolated static func write(_ data: Data, named name: String) -> Item? {
+        let fallback = name.isEmpty ? "Item" : name
+        let id = UUID()
+        let directory = folder.appending(path: id.uuidString, directoryHint: .isDirectory)
+        let destination = directory.appending(path: clean(fallback))
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: destination)
+            return Item(id: id, url: destination, original: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: directory)
+            return nil
+        }
+    }
+
+    private nonisolated static func writeLink(_ url: URL) -> Item? {
+        let plist: [String: Any] = ["URL": url.absoluteString]
+        guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else { return nil }
+        let name = (url.host() ?? "Link").replacingOccurrences(of: "www.", with: "")
+        let detail = url.lastPathComponent == "/" || url.lastPathComponent.isEmpty ? "" : " – " + url.lastPathComponent
+        return write(data, named: "\(name)\(detail).webloc")
+    }
+
+    private nonisolated static func looksLikeImage(_ url: URL) -> Bool {
+        ["png", "jpg", "jpeg", "gif", "webp", "heic", "tiff", "bmp"].contains(url.pathExtension.lowercased())
+    }
+
+    private nonisolated static func download(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url, timeoutInterval: 15)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", forHTTPHeaderField: "User-Agent")
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200, data.count < 50_000_000 else { return nil }
+        return data
+    }
+
+    private nonisolated static func clean(_ name: String) -> String {
+        let cleaned = name.replacingOccurrences(of: "[/:\\n\\r]", with: "-", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? "Item" : String(cleaned.prefix(80))
+    }
+
+    private nonisolated static func stamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH.mm.ss"
+        return formatter.string(from: .now)
     }
 
     private nonisolated static func isSameVolume(_ source: URL, _ folder: URL) -> Bool {

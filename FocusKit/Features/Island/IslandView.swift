@@ -1057,12 +1057,25 @@ struct IslandView: View {
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.75))
                         .symbolEffect(.bounce, value: isDropTargeted)
-                    Text("Drop files here")
+                    Text("Drop files, links or images")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.white)
-                    Text("Keep them close, then drag them out or AirDrop them.")
+                    Text("Or paste what you copied, then drag it out or AirDrop it.")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
+                    Button {
+                        pasteIntoTray()
+                    } label: {
+                        Label("Paste", systemImage: "doc.on.clipboard")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .frame(height: 28)
+                            .background(.white.opacity(0.12), in: .capsule)
+                            .contentShape(.capsule)
+                    }
+                    .buttonStyle(.pressable)
+                    .padding(.top, 2)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .overlay {
@@ -1084,6 +1097,7 @@ struct IslandView: View {
                 .notchCard()
 
                 VStack(spacing: 6) {
+                    trayAction("Paste", symbol: "doc.on.clipboard") { pasteIntoTray() }
                     trayAction("AirDrop", symbol: "antenna.radiowaves.left.and.right") { tray.airDrop(tray.urls) }
                     ShareLink(items: tray.urls) {
                         trayActionLabel("Share", symbol: "square.and.arrow.up")
@@ -1095,6 +1109,14 @@ struct IslandView: View {
                 }
                 .frame(width: 112)
             }
+        }
+    }
+
+    private func pasteIntoTray() {
+        if tray.pasteFromClipboard() {
+            IslandController.tap()
+        } else {
+            NSSound.beep()
         }
     }
 

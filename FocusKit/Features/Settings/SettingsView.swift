@@ -710,7 +710,7 @@ private struct NotchPane: View {
                 }
             }
             SettingsCard {
-                SettingsRow(title: "File tray", detail: "Drag files onto the notch to keep them close, then drag them out, share or AirDrop them.", symbol: "tray.fill", tint: FocusMode.tide.palette.deep) {
+                SettingsRow(title: "File tray", detail: "Drop or paste files, images and links on the notch to keep them close, then drag them out, share or AirDrop them.", symbol: "tray.fill", tint: FocusMode.tide.palette.deep) {
                     Toggle("", isOn: $showsTray)
                         .toggleStyle(.switch)
                         .labelsHidden()
