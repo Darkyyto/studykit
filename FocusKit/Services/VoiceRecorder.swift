@@ -34,6 +34,7 @@ final class VoiceRecorder {
     @ObservationIgnored private var name = ""
     @ObservationIgnored private var draftID: Recording.ID?
     @ObservationIgnored private var lastDraftSave = Date.distantPast
+    @ObservationIgnored private var awake: NSObjectProtocol?
 
     init(library: Library) {
         self.library = library
@@ -84,6 +85,7 @@ final class VoiceRecorder {
         }
 
         self.capture = capture
+        awake = ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .userInitiated], reason: "Recording")
         self.goalID = goalID
         self.noun = noun
         self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -103,6 +105,8 @@ final class VoiceRecorder {
         state = .finishing
         capture?.stop()
         capture = nil
+        if let awake { ProcessInfo.processInfo.endActivity(awake) }
+        awake = nil
         await transcription?.finish()
         await resultsTask?.value
         transcription = nil
