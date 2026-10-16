@@ -342,7 +342,7 @@ struct RecordingsScreen: View {
             if !goals.isEmpty {
                 ScrollView(.horizontal) {
                     HStack(spacing: 6) {
-                        chip(title: "All", tint: Palette.ink, isSelected: goalFilter == nil) { goalFilter = nil }
+                        chip(title: "All", tint: Palette.ink, label: Palette.canvas, isSelected: goalFilter == nil) { goalFilter = nil }
                         ForEach(goals) { goal in
                             chip(title: goal.title, tint: goal.tint.color, isSelected: goalFilter == goal.id) {
                                 goalFilter = goalFilter == goal.id ? nil : goal.id
@@ -358,15 +358,15 @@ struct RecordingsScreen: View {
         .animation(Motion.quick, value: query.isEmpty)
     }
 
-    private func chip(title: String, tint: Color, isSelected: Bool, action: @escaping () -> Void) -> some View {
+    private func chip(title: String, tint: Color, label: Color = .white, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(isSelected ? .white : tint)
+                    .fill(isSelected ? label : tint)
                     .frame(width: 7, height: 7)
                 Text(title)
                     .font(.rounded(13, weight: .semibold))
-                    .foregroundStyle(isSelected ? .white : Palette.ink)
+                    .foregroundStyle(isSelected ? label : Palette.ink)
             }
             .padding(.horizontal, 12)
             .frame(height: 30)

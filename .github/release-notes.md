@@ -1,2 +1,2 @@
 <!-- silent -->
-- When a lecture outlasts the focus timer, Done keeps it recording and opens Recordings with the live transcript
+- The selected All filter in Recordings is readable in dark mode
