@@ -1,2 +1,2 @@
 <!-- silent -->
-- Shows how far along your notes are while they are being written
+- When a lecture outlasts the focus timer, Done keeps it recording and opens Recordings with the live transcript

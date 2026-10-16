@@ -5,8 +5,20 @@ struct CompletionCard: View {
     var stopRecording: (() -> Void)?
     @Environment(FocusEngine.self) private var engine
     @Environment(Library.self) private var library
+    @Environment(VoiceRecorder.self) private var recorder
+    @AppStorage("section") private var section = AppSection.focus
     @State private var note = ""
     @State private var celebrates = false
+
+    private func done() {
+        if stopRecording != nil, case .recording = recorder.state {
+            recorder.keepGoingAfterSession()
+            engine.finish(note: note)
+            section = .recordings
+        } else {
+            engine.finish(note: note)
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -77,10 +89,10 @@ struct CompletionCard: View {
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
                     .background(Palette.surface.opacity(0.7), in: .rect(cornerRadius: 18))
-                    .onSubmit { engine.finish(note: note) }
+                    .onSubmit { done() }
 
                 Button {
-                    engine.finish(note: note)
+                    done()
                 } label: {
                     Text("Done")
                         .font(.rounded(16, weight: .semibold))
@@ -144,6 +156,13 @@ private struct RecordingStatus: View {
                         .foregroundStyle(Palette.inkSecondary)
                         .contentTransition(.numericText())
                 }
+                if case .recording = recorder.state, !liveLine.isEmpty {
+                    Text(liveLine)
+                        .font(.rounded(12))
+                        .foregroundStyle(Palette.inkTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
             }
             Spacer(minLength: 8)
             if case .recording = recorder.state {
@@ -155,7 +174,8 @@ private struct RecordingStatus: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: 58)
+        .padding(.vertical, 10)
+        .frame(minHeight: 58)
         .background(Palette.surface.opacity(0.7), in: .rect(cornerRadius: 18))
         .animation(Motion.standard, value: recorder.state)
         .onAppear { pulses = true }
@@ -184,6 +204,10 @@ private struct RecordingStatus: View {
         }
     }
 
+    private var liveLine: String {
+        String(Transcription.joined([recorder.finalizedText, recorder.volatileText]).suffix(160))
+    }
+
     private var title: String {
         switch recorder.state {
         case .recording: "Still recording"
@@ -195,7 +219,7 @@ private struct RecordingStatus: View {
     private var subtitle: String {
         switch recorder.state {
         case .recording(let since):
-            "\(Date.now.timeIntervalSince(since).clock) so far · keeps going until you stop"
+            "\(Date.now.timeIntervalSince(since).clock) so far · Done keeps it going in Recordings"
         case .finishing, .preparing, .downloadingModel:
             "This takes a moment"
         case .idle:

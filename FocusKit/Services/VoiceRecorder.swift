@@ -176,6 +176,12 @@ final class VoiceRecorder {
         }
     }
 
+    /// The focus time ran out but the lecture hasn't: keep recording after the session closes.
+    func keepGoingAfterSession() {
+        guard ownedBySession, case .recording = state else { return }
+        ownedBySession = false
+    }
+
     func stopNow(engine: FocusEngine, enhancer: NoteEnhancer, persona: Persona) {
         guard isActive else { return }
         ownedBySession = false
